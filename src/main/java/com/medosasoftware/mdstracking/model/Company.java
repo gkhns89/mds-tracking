@@ -1,25 +1,30 @@
 package com.medosasoftware.mdstracking.model;
 
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.List;
 
 @Entity
 @Table(name = "companies")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class Company {
-
+    @Getter
+    @Setter
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true, nullable = false)
     private String name;
 
-    @OneToMany(mappedBy = "company", cascade = CascadeType.ALL)
-    private List<User> users;  // Şirkete bağlı kullanıcılar
+    @ManyToMany(mappedBy = "companies")
+    private List<User> users;
+
+    public Company() {
+    }
+
+    // Getter & Setter
+
+
 }

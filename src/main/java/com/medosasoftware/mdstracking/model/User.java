@@ -1,30 +1,47 @@
 package com.medosasoftware.mdstracking.model;
 
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = false)
+    @Column(unique = true, nullable = false)
     private String username;
 
     @Column(nullable = false)
     private String password;
 
-    @ManyToOne
-    @JoinColumn(name = "company_id", nullable = false)
-    private Company company;  // Kullanıcının bağlı olduğu firma
+    @Getter
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role;  // Role enum kullanımı
+
+    // Getter & Setter metodu Lombok sayesinde otomatik olarak ekleniyor
+    @Getter
+    @Setter
+    @ManyToMany
+    @JoinTable(
+            name = "user_companies",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "company_id")
+    )
+    private List<Company> companies = new ArrayList<>();  // ✅ Liste başlatıldı
+
+    // Constructor ve diğer gerekli metotlar
+    public User() {
+    }
+
 }

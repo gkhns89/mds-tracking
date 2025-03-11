@@ -2,7 +2,7 @@ package com.medosasoftware.mdstracking.controller;
 
 import com.medosasoftware.mdstracking.model.User;
 import com.medosasoftware.mdstracking.service.UserService;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Optional;
@@ -10,29 +10,22 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
+    @Autowired
+    private UserService userService;
 
-    private final UserService userService;
-
-    public UserController(UserService userService) {
-        this.userService = userService;
+    @PostMapping("/create")
+    public User createUser(@RequestBody User user) {
+        return userService.createUser(user);
     }
 
-    @PostMapping("/register")
-    public ResponseEntity<String> registerUser(@RequestParam String email,
-                                               @RequestParam String username,
-                                               @RequestParam String password,
-                                               @RequestParam String companyName) {
-        try {
-            userService.registerUser(email, username, password, companyName);
-            return ResponseEntity.ok("Kullanıcı başarıyla oluşturuldu!");
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    @PostMapping("/{userId}/assign-company/{companyId}")
+    public String assignCompany(@PathVariable Long userId, @PathVariable Long companyId) {
+        userService.assignCompanyToUser(userId, companyId);
+        return "Company assigned to user successfully";
     }
 
     @GetMapping("/{email}")
-    public ResponseEntity<User> getUserByEmail(@PathVariable String email) {
-        Optional<User> user = userService.findByEmail(email);
-        return user.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    public Optional<User> getUserByEmail(@PathVariable String email) {
+        return userService.findByEmail(email);
     }
 }
