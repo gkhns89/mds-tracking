@@ -14,17 +14,21 @@ public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    @Getter
+    @Setter
     @Column(unique = true, nullable = false)
     private String email;
-
+    @Getter
+    @Setter
     @Column(unique = true, nullable = false)
     private String username;
-
+    @Getter
+    @Setter
     @Column(nullable = false)
     private String password;
 
     @Getter
+    @Setter
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;  // Role enum kullanımı
