@@ -8,9 +8,9 @@ import java.util.List;
 
 @Entity
 @Table(name = "companies")
+@Getter
+@Setter
 public class Company {
-    @Getter
-    @Setter
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -23,8 +23,4 @@ public class Company {
 
     public Company() {
     }
-
-    // Getter & Setter
-
-
 }
