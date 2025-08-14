@@ -1,12 +1,13 @@
 package com.medosasoftware.mdstracking.security;
 
-import com.medosasoftware.mdstracking.model.User;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import io.jsonwebtoken.security.Keys;
 
+import javax.crypto.SecretKey;
 import java.util.Date;
 
 @Component
@@ -18,28 +19,37 @@ public class JwtTokenProvider {
     @Value("${jwt.expiration}")
     private long validityInMilliseconds = 3600000; // 1 hour
 
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(secretKey.getBytes());
+    }
+
     public String generateToken(String email) {
         return Jwts.builder()
                 .setSubject(email)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 86400000)) // 1 gün geçerli
-                .signWith(Keys.hmacShaKeyFor(secretKey.getBytes()), SignatureAlgorithm.HS256)
+                .setExpiration(new Date(System.currentTimeMillis() + validityInMilliseconds))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     public String getEmailFromToken(String token) {
-        return Jwts.parser()
-                .setSigningKey(secretKey)
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
                 .parseClaimsJws(token)
-                .getBody()
-                .getSubject();
+                .getBody();
+        return claims.getSubject();
     }
 
     public boolean validateToken(String token) {
         try {
-            Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token);
+            Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token);
             return true;
         } catch (Exception e) {
+            System.out.println("Token validation failed: " + e.getMessage());
             return false;
         }
     }
