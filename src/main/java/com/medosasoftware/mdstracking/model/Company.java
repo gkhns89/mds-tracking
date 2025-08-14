@@ -18,8 +18,6 @@ public class Company {
     @Column(unique = true, nullable = false)
     private String name;
 
-    @ManyToMany(mappedBy = "companies")
-    private List<User> users;
 
     public Company() {
     }

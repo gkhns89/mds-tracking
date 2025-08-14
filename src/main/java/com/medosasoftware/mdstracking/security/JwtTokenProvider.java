@@ -43,13 +43,16 @@ public class JwtTokenProvider {
 
     public boolean validateToken(String token) {
         try {
+            System.out.println("🔍 Validating token: " + token.substring(0, Math.min(20, token.length())) + "...");
             Jwts.parserBuilder()
                     .setSigningKey(getSigningKey())
                     .build()
                     .parseClaimsJws(token);
+            System.out.println("✅ Token validation successful");
             return true;
         } catch (Exception e) {
-            System.out.println("Token validation failed: " + e.getMessage());
+            System.out.println("❌ Token validation failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
     }

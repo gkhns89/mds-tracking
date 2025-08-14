@@ -13,31 +13,56 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-@Component  // ✅ Spring Bean olarak tanımlıyoruz!
+@Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
-    private final UserDetailsService userDetailsService; // ✅ UserDetailsService ekledik
+    private final UserDetailsService userDetailsService;
 
     public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, UserDetailsService userDetailsService) {
         this.jwtTokenProvider = jwtTokenProvider;
-        this.userDetailsService = userDetailsService; // ✅ Co
+        this.userDetailsService = userDetailsService;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        String token = resolveToken(request);
-        if (token != null && jwtTokenProvider.validateToken(token)) {
-            String email = jwtTokenProvider.getEmailFromToken(token);
-            if (email != null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+        String requestURI = request.getRequestURI();
+        System.out.println("🔍 Processing request: " + requestURI);
 
-                SecurityContextHolder.getContext().setAuthentication(authentication); // ✅ Kullanıcı oturumuna ekleniyor
+        String token = resolveToken(request);
+        System.out.println("🔑 Token extracted: " + (token != null ? "YES (length: " + token.length() + ")" : "NO"));
+
+        if (token != null) {
+            boolean isValid = jwtTokenProvider.validateToken(token);
+            System.out.println("✅ Token valid: " + isValid);
+
+            if (isValid) {
+                String email = jwtTokenProvider.getEmailFromToken(token);
+                System.out.println("📧 Email from token: " + email);
+
+                if (email != null) {
+                    try {
+                        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                        System.out.println("👤 User found: " + userDetails.getUsername() + " with authorities: " + userDetails.getAuthorities());
+
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                        System.out.println("🔐 Authentication set successfully!");
+                    } catch (Exception e) {
+                        System.out.println("❌ Error loading user: " + e.getMessage());
+                    }
+                } else {
+                    System.out.println("❌ Email is null from token");
+                }
+            } else {
+                System.out.println("❌ Token validation failed");
             }
+        } else {
+            System.out.println("❌ No token found in request");
         }
 
         filterChain.doFilter(request, response);
@@ -45,6 +70,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String resolveToken(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
+        System.out.println("🎯 Authorization header: " + bearerToken);
+
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7);
         }

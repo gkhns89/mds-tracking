@@ -29,21 +29,25 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable) // CSRF kapatıldı çünkü JWT kullanıyoruz
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Stateless session yönetimi
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll() // Login ve Register açık
-                        .requestMatchers("/api/companies/**").authenticated() // 🔹 Şirket işlemleri JWT gerektiriyor
-                        .anyRequest().authenticated() // Diğer tüm istekler kimlik doğrulama gerektiriyor
+                        .requestMatchers("/api/companies/create").hasRole("ADMIN") // ✅ Sadece admin şirket oluşturabilir
+                        .requestMatchers("/api/companies/**").authenticated() // Diğer şirket işlemleri tüm kullanıcılar
+                        .requestMatchers("/api/users/create").hasRole("ADMIN") // ✅ Sadece admin kullanıcı oluşturabilir
+                        .requestMatchers("/api/users/*/assign-company/*").hasRole("ADMIN") // ✅ Sadece admin şirket atayabilir
+                        .requestMatchers("/api/users/**").authenticated() // Diğer user işlemleri tüm kullanıcılar
+                        .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class); // JWT filter ekleniyor
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(); // Şifreleme için BCrypt kullanıyoruz
+        return new BCryptPasswordEncoder();
     }
 
     @Bean
