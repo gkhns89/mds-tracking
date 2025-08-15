@@ -1,5 +1,6 @@
 package com.medosasoftware.mdstracking.model;
 
-public enum Role {
-    ADMIN, USER
+public enum GlobalRole {
+    SUPER_ADMIN,  // Sistem yöneticisi (sen)
+    USER          // Normal kullanıcı
 }
