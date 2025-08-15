@@ -4,8 +4,11 @@ import com.medosasoftware.mdstracking.model.Company;
 import com.medosasoftware.mdstracking.model.User;
 import com.medosasoftware.mdstracking.repository.CompanyRepository;
 import com.medosasoftware.mdstracking.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -16,24 +19,36 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/companies")
 public class CompanyController {
+
+    private static final Logger logger = LoggerFactory.getLogger(CompanyController.class);
+
     @Autowired
     private CompanyRepository companyRepository;
 
     @Autowired
     private UserService userService;
 
-    // ✅ Firma oluşturma (Sadece SUPER_ADMIN)
     @PostMapping("/create")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<?> createCompany(@RequestBody Company company) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = userService.findByEmail(auth.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!currentUser.isSuperAdmin()) {
+            return ResponseEntity.status(403).body("❌ Only SUPER_ADMIN can create companies");
+        }
+
         try {
             Company savedCompany = companyRepository.save(company);
+            logger.info("Company created successfully: {} by user: {}", savedCompany.getName(), currentUser.getEmail());
             return ResponseEntity.ok("✅ Company created successfully: " + savedCompany.getName());
         } catch (Exception e) {
+            logger.error("Error creating company", e);
             return ResponseEntity.badRequest().body("❌ Error creating company: " + e.getMessage());
         }
     }
 
-    // ✅ Firmaları listeleme (Yetki bazlı)
     @GetMapping
     public ResponseEntity<List<Company>> getAllCompanies() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -45,17 +60,16 @@ public class CompanyController {
         List<Company> companies;
 
         if (currentUser.isSuperAdmin()) {
-            System.out.println("👑 SUPER_ADMIN user - showing all companies");
-            companies = companyRepository.findAll(); // Tüm şirketler
+            logger.debug("SUPER_ADMIN user - showing all companies");
+            companies = companyRepository.findAll();
         } else {
-            System.out.println("👤 USER - showing only accessible companies");
-            companies = userService.getUserAccessibleCompanies(currentUser); // Sadece erişebildiği şirketler
+            logger.debug("USER - showing only accessible companies");
+            companies = userService.getUserAccessibleCompanies(currentUser);
         }
 
         return ResponseEntity.ok(companies);
     }
 
-    // ✅ Belirli firmayı getirme
     @GetMapping("/{id}")
     public ResponseEntity<?> getCompanyById(@PathVariable Long id) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -71,7 +85,6 @@ public class CompanyController {
 
         Company company = companyOpt.get();
 
-        // Yetki kontrolü
         if (!userService.canUserViewCompany(currentUser, company)) {
             return ResponseEntity.status(403).body("❌ Access denied to this company");
         }
@@ -79,7 +92,6 @@ public class CompanyController {
         return ResponseEntity.ok(company);
     }
 
-    // ✅ Kullanıcının sadece kendi erişebildiği firmaları görmesi için ek endpoint
     @GetMapping("/my-companies")
     public ResponseEntity<List<Company>> getMyCompanies() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -88,12 +100,10 @@ public class CompanyController {
         User currentUser = userService.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        System.out.println("📋 User " + email + " requesting their accessible companies");
         List<Company> companies = userService.getUserAccessibleCompanies(currentUser);
         return ResponseEntity.ok(companies);
     }
 
-    // ✅ Kullanıcının yönetebileceği firmalar
     @GetMapping("/manageable")
     public ResponseEntity<List<Company>> getManageableCompanies() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -106,7 +116,6 @@ public class CompanyController {
         return ResponseEntity.ok(companies);
     }
 
-    // ✅ Firma güncelleme
     @PutMapping("/{id}")
     public ResponseEntity<?> updateCompany(@PathVariable Long id, @RequestBody Company companyDetails) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -122,7 +131,6 @@ public class CompanyController {
 
         Company company = companyOpt.get();
 
-        // Yetki kontrolü - Sadece SUPER_ADMIN veya COMPANY_ADMIN
         if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(company)) {
             return ResponseEntity.status(403).body("❌ Insufficient permissions to update this company");
         }
