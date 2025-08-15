@@ -33,6 +33,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll() // Login ve Register açık
+                        .requestMatchers("/api/setup/**").permitAll() // ✅ Setup endpoint'leri açık
                         .requestMatchers("/api/companies/create").hasRole("ADMIN") // ✅ Sadece admin şirket oluşturabilir
                         .requestMatchers("/api/companies/**").authenticated() // Diğer şirket işlemleri tüm kullanıcılar
                         .requestMatchers("/api/users/create").hasRole("ADMIN") // ✅ Sadece admin kullanıcı oluşturabilir
