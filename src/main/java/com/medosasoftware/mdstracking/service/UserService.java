@@ -1,5 +1,6 @@
 package com.medosasoftware.mdstracking.service;
 
+import com.medosasoftware.mdstracking.dto.UserUpdateRequest;
 import com.medosasoftware.mdstracking.model.*;
 import com.medosasoftware.mdstracking.repository.CompanyRepository;
 import com.medosasoftware.mdstracking.repository.CompanyUserRoleRepository;
@@ -12,8 +13,10 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,10 +37,100 @@ public class UserService implements UserDetailsService {
     @Autowired
     private CompanyUserRoleRepository companyUserRoleRepository;
 
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     public User createUser(User user) {
+        // Email uniqueness kontrolü
+        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
+            throw new RuntimeException("Email already exists: " + user.getEmail());
+        }
+
+        // Username uniqueness kontrolü
+        if (userRepository.findByUsername(user.getUsername()).isPresent()) {
+            throw new RuntimeException("Username already exists: " + user.getUsername());
+        }
+
         return userRepository.save(user);
     }
 
+    // ✅ YENİ: Kullanıcı güncelleme metodu
+    public User updateUser(Long userId, UserUpdateRequest request, User updatingUser) {
+        User userToUpdate = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+
+        // Email güncellenecekse uniqueness kontrol et
+        if (StringUtils.hasText(request.getEmail()) &&
+                !request.getEmail().equals(userToUpdate.getEmail())) {
+            Optional<User> existingUser = userRepository.findByEmail(request.getEmail());
+            if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
+                throw new RuntimeException("Email already exists: " + request.getEmail());
+            }
+            userToUpdate.setEmail(request.getEmail());
+        }
+
+        // Username güncellenecekse uniqueness kontrol et
+        if (StringUtils.hasText(request.getUsername()) &&
+                !request.getUsername().equals(userToUpdate.getUsername())) {
+            Optional<User> existingUser = userRepository.findByUsername(request.getUsername());
+            if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
+                throw new RuntimeException("Username already exists: " + request.getUsername());
+            }
+            userToUpdate.setUsername(request.getUsername());
+        }
+
+        // Şifre güncellenecekse encode et
+        if (StringUtils.hasText(request.getPassword())) {
+            userToUpdate.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+
+        // Aktiflik durumu - sadece SUPER_ADMIN değiştirebilir
+        if (request.getIsActive() != null) {
+            if (!updatingUser.isSuperAdmin()) {
+                throw new RuntimeException("Only SUPER_ADMIN can change user active status");
+            }
+            userToUpdate.setIsActive(request.getIsActive());
+        }
+
+        return userRepository.save(userToUpdate);
+    }
+
+    // ✅ YENİ: Kullanıcı silme (soft delete)
+    public void deleteUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+
+        // Soft delete - aktiflik durumunu false yap
+        user.setIsActive(false);
+        userRepository.save(user);
+
+        logger.info("User soft deleted: {} (ID: {})", user.getEmail(), userId);
+    }
+
+    // ✅ YENİ: Yetki bazlı kullanıcı listesi
+    public List<User> getAllUsers(User currentUser) {
+        if (currentUser.isSuperAdmin()) {
+            // SUPER_ADMIN tüm kullanıcıları görebilir
+            return userRepository.findAll();
+        } else {
+            // Normal kullanıcılar sadece kendi şirketlerindeki kullanıcıları görebilir
+            List<Company> manageableCompanies = getUserManageableCompanies(currentUser);
+            List<User> users = new ArrayList<>();
+
+            for (Company company : manageableCompanies) {
+                List<User> companyUsers = getCompanyUsers(company.getId());
+                for (User user : companyUsers) {
+                    if (!users.contains(user)) {
+                        users.add(user);
+                    }
+                }
+            }
+
+            return users;
+        }
+    }
+
+    // ✅ MEVCUT: Diğer metodlar (değişiklik yok)
     public CompanyUserRole assignRoleToUserInCompany(Long userId, Long companyId,
                                                      CompanyRole role, User assignedBy) {
         User user = userRepository.findById(userId)
@@ -97,14 +190,11 @@ public class UserService implements UserDetailsService {
         CompanyRole userRole = user.getRoleInCompany(company);
         if (userRole == null) return false;
 
-        switch (userRole) {
-            case COMPANY_ADMIN:
-                return true;
-            case COMPANY_MANAGER:
-                return roleToAssign == CompanyRole.COMPANY_USER;
-            default:
-                return false;
-        }
+        return switch (userRole) {
+            case COMPANY_ADMIN -> true;
+            case COMPANY_MANAGER -> roleToAssign == CompanyRole.COMPANY_USER;
+            default -> false;
+        };
     }
 
     public boolean canUserManageCompany(User user, Company company) {
@@ -129,10 +219,39 @@ public class UserService implements UserDetailsService {
         return userRepository.findById(id);
     }
 
+    // ✅ YENİ: Kullanıcının başka bir kullanıcıyı düzenleyip düzenleyemeyeceğini kontrol et
+    public boolean canUserEditUser(User currentUser, Long targetUserId) {
+        // SUPER_ADMIN herkesi düzenleyebilir
+        if (currentUser.isSuperAdmin()) {
+            return true;
+        }
+
+        // Kullanıcı sadece kendisini düzenleyebilir
+        if (currentUser.getId().equals(targetUserId)) {
+            return true;
+        }
+
+        // Şirket yöneticileri kendi şirketlerindeki kullanıcıları düzenleyebilir
+        Optional<User> targetUser = findById(targetUserId);
+        if (targetUser.isPresent()) {
+            List<Company> manageableCompanies = getUserManageableCompanies(currentUser);
+            List<Company> targetUserCompanies = getUserAccessibleCompanies(targetUser.get());
+
+            // Ortak şirket var mı kontrol et
+            for (Company company : manageableCompanies) {
+                if (targetUserCompanies.contains(company)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         Optional<User> user = findByEmail(username);
-        if (!user.isPresent()) {
+        if (user.isEmpty()) {
             throw new UsernameNotFoundException("User not found: " + username);
         }
 
