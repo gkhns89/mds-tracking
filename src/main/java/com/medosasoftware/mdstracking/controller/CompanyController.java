@@ -18,6 +18,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/companies")
+@CrossOrigin(origins = "*")
 public class CompanyController {
 
     private static final Logger logger = LoggerFactory.getLogger(CompanyController.class);
@@ -140,5 +141,70 @@ public class CompanyController {
 
         Company updatedCompany = companyRepository.save(company);
         return ResponseEntity.ok(updatedCompany);
+    }
+
+    // ✅ YENİ: Şirket silme
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteCompany(@PathVariable Long id) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            Optional<Company> companyOpt = companyRepository.findById(id);
+            if (!companyOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Company company = companyOpt.get();
+
+            // Yetki kontrolü - Sadece SUPER_ADMIN veya COMPANY_ADMIN
+            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(company)) {
+                return ResponseEntity.status(403).body("❌ Insufficient permissions to delete this company");
+            }
+
+            // Soft delete
+            company.setIsActive(false);
+            companyRepository.save(company);
+
+            logger.info("Company soft deleted: {} by {}", company.getName(), currentUser.getEmail());
+            return ResponseEntity.ok("✅ Company deleted successfully");
+
+        } catch (Exception e) {
+            logger.error("Error deleting company", e);
+            return ResponseEntity.badRequest().body("❌ Error deleting company: " + e.getMessage());
+        }
+    }
+
+    // ✅ YENİ: Şirket durumunu değiştirme (aktif/pasif)
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<?> toggleCompanyStatus(@PathVariable Long id) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (!currentUser.isSuperAdmin()) {
+                return ResponseEntity.status(403).body("❌ Only SUPER_ADMIN can change company status");
+            }
+
+            Optional<Company> companyOpt = companyRepository.findById(id);
+            if (!companyOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Company company = companyOpt.get();
+            company.setIsActive(!company.getIsActive());
+            companyRepository.save(company);
+
+            String status = company.getIsActive() ? "activated" : "deactivated";
+            logger.info("Company {}: {} by {}", status, company.getName(), currentUser.getEmail());
+
+            return ResponseEntity.ok("✅ Company " + status + " successfully");
+
+        } catch (Exception e) {
+            logger.error("Error changing company status", e);
+            return ResponseEntity.badRequest().body("❌ Error changing company status: " + e.getMessage());
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.medosasoftware.mdstracking.controller;
 
+import com.medosasoftware.mdstracking.dto.UserUpdateRequest;
 import com.medosasoftware.mdstracking.model.*;
 import com.medosasoftware.mdstracking.repository.CompanyRepository;
 import com.medosasoftware.mdstracking.service.UserService;
@@ -13,11 +14,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+
 import java.util.List;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/users")
+@CrossOrigin(origins = "*")
 public class UserController {
 
     private static final Logger logger = LoggerFactory.getLogger(UserController.class);
@@ -31,6 +35,7 @@ public class UserController {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    // ✅ Kullanıcı oluşturma (mevcut kod)
     @PostMapping("/create")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<?> createUser(@RequestBody User user) {
@@ -42,7 +47,6 @@ public class UserController {
             return ResponseEntity.status(403).body("❌ Only SUPER_ADMIN can create users");
         }
 
-        // Güvenlik: Sadece USER rolünde kullanıcı oluşturulabilir
         user.setGlobalRole(GlobalRole.USER);
         user.setPassword(passwordEncoder.encode(user.getPassword()));
 
@@ -54,6 +58,79 @@ public class UserController {
             logger.error("Error creating user", e);
             return ResponseEntity.badRequest().body("❌ Error creating user: " + e.getMessage());
         }
+    }
+
+    // ✅ YENİ: Kullanıcı düzenleme
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequest request) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+            // Yetki kontrolü
+            if (!canUserEditUser(currentUser, id)) {
+                return ResponseEntity.status(403).body("❌ Insufficient permissions to edit this user");
+            }
+
+            User updatedUser = userService.updateUser(id, request, currentUser);
+            logger.info("User updated: {} by {}", id, currentUser.getEmail());
+
+            return ResponseEntity.ok("✅ User updated successfully");
+        } catch (Exception e) {
+            logger.error("Error updating user", e);
+            return ResponseEntity.badRequest().body("❌ Error updating user: " + e.getMessage());
+        }
+    }
+
+    // ✅ YENİ: Kullanıcı silme (soft delete)
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+            // Sadece SUPER_ADMIN kullanıcı silebilir
+            if (!currentUser.isSuperAdmin()) {
+                return ResponseEntity.status(403).body("❌ Only SUPER_ADMIN can delete users");
+            }
+
+            // Kendini silmeye çalışıyor mu?
+            if (currentUser.getId().equals(id)) {
+                return ResponseEntity.badRequest().body("❌ You cannot delete yourself");
+            }
+
+            userService.deleteUser(id);
+            logger.info("User deleted: {} by {}", id, currentUser.getEmail());
+
+            return ResponseEntity.ok("✅ User deleted successfully");
+        } catch (Exception e) {
+            logger.error("Error deleting user", e);
+            return ResponseEntity.badRequest().body("❌ Error deleting user: " + e.getMessage());
+        }
+    }
+
+    // ✅ YENİ: Tüm kullanıcıları listeleme (yetki bazlı)
+    @GetMapping("/all")
+    public ResponseEntity<List<User>> getAllUsers() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = userService.findByEmail(auth.getName())
+                .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+        List<User> users = userService.getAllUsers(currentUser);
+        return ResponseEntity.ok(users);
+    }
+
+    // ✅ Yetki kontrol metodu
+    private boolean canUserEditUser(User currentUser, Long targetUserId) {
+        // SUPER_ADMIN herkeyi edit edebilir
+        if (currentUser.isSuperAdmin()) {
+            return true;
+        }
+
+        // Kullanıcı sadece kendisini edit edebilir
+        return currentUser.getId().equals(targetUserId);
     }
 
     @PostMapping("/{userId}/assign-role")
