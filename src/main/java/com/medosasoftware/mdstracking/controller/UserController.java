@@ -60,7 +60,6 @@ public class UserController {
         }
     }
 
-    // ✅ YENİ: Kullanıcı düzenleme
     @PutMapping("/{id}")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateRequest request) {
         try {
@@ -68,13 +67,13 @@ public class UserController {
             User currentUser = userService.findByEmail(auth.getName())
                     .orElseThrow(() -> new RuntimeException("Current user not found"));
 
-            // Yetki kontrolü
-            if (!canUserEditUser(currentUser, id)) {
+            // Yetki kontrolü - UserService'teki metodu kullan
+            if (!userService.canUserEditUser(currentUser, id)) {
                 return ResponseEntity.status(403).body("❌ Insufficient permissions to edit this user");
             }
 
             User updatedUser = userService.updateUser(id, request, currentUser);
-            logger.info("User updated: {} by {}", id, currentUser.getEmail());
+            logger.info("{} updated: {} by {}", updatedUser, id, currentUser.getEmail());
 
             return ResponseEntity.ok("✅ User updated successfully");
         } catch (Exception e) {
@@ -122,17 +121,6 @@ public class UserController {
         return ResponseEntity.ok(users);
     }
 
-    // ✅ Yetki kontrol metodu
-    private boolean canUserEditUser(User currentUser, Long targetUserId) {
-        // SUPER_ADMIN herkeyi edit edebilir
-        if (currentUser.isSuperAdmin()) {
-            return true;
-        }
-
-        // Kullanıcı sadece kendisini edit edebilir
-        return currentUser.getId().equals(targetUserId);
-    }
-
     @PostMapping("/{userId}/assign-role")
     public ResponseEntity<?> assignRoleToUser(
             @PathVariable Long userId,
@@ -153,7 +141,7 @@ public class UserController {
                     userId, companyId, role, currentUser);
 
             logger.info("Role {} assigned to user {} in company {} by {}",
-                    role, userId, companyId, currentUser.getEmail());
+                    assignedRole, userId, companyId, currentUser.getEmail());
 
             return ResponseEntity.ok("✅ Role " + role + " assigned to user in company successfully");
         } catch (Exception e) {
