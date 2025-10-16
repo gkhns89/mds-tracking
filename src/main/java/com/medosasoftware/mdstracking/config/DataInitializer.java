@@ -3,6 +3,7 @@ package com.medosasoftware.mdstracking.config;
 import com.medosasoftware.mdstracking.model.GlobalRole;
 import com.medosasoftware.mdstracking.model.User;
 import com.medosasoftware.mdstracking.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
@@ -17,6 +18,7 @@ public class DataInitializer {
     private UserRepository userRepository;
 
     @Autowired
+
     private PasswordEncoder passwordEncoder;
 
     // Environment variables veya application.properties'den al
@@ -28,6 +30,11 @@ public class DataInitializer {
 
     @Value("${app.admin.username:admin}")
     private String adminUsername;
+
+    @PostConstruct
+    public void checkEnv() {
+        System.out.println("🧩 Loaded adminEmail from env: " + adminEmail);
+    }
 
     @Bean
     public ApplicationRunner initializeDefaultAdmin() {
@@ -58,4 +65,5 @@ public class DataInitializer {
             }
         };
     }
+
 }
