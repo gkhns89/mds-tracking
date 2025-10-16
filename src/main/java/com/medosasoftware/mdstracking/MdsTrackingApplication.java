@@ -1,22 +1,27 @@
 package com.medosasoftware.mdstracking;
 
+import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import io.github.cdimascio.dotenv.Dotenv;
-
 
 @SpringBootApplication
 public class MdsTrackingApplication {
 
     public static void main(String[] args) {
-        Dotenv dotenv = Dotenv.load();
-        System.setProperty("DB_HOST", dotenv.get("DB_HOST"));
-        System.setProperty("DB_PORT", dotenv.get("DB_PORT"));
-        System.setProperty("DB_NAME", dotenv.get("DB_NAME"));
-        System.setProperty("DB_USER", dotenv.get("DB_USER"));
-        System.setProperty("DB_PASSWORD", dotenv.get("DB_PASSWORD"));
+        // 🌱 .env dosyasını yükle
+        Dotenv dotenv = Dotenv.configure()
+                .ignoreIfMissing()
+                .load();
 
+        // 🔁 Tüm .env değişkenlerini System property olarak aktar
+        dotenv.entries().forEach(entry ->
+                System.setProperty(entry.getKey(), entry.getValue())
+        );
+
+        // 🧩 Debug için bir satır (görmek istersen)
+        System.out.println("✅ .env yüklendi. APP_PORT = " + System.getProperty("APP_PORT"));
+
+        // 🚀 Spring Boot'u başlat
         SpringApplication.run(MdsTrackingApplication.class, args);
     }
-
 }

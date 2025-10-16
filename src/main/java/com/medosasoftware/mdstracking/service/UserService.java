@@ -8,6 +8,7 @@ import com.medosasoftware.mdstracking.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -38,6 +39,7 @@ public class UserService implements UserDetailsService {
     private CompanyUserRoleRepository companyUserRoleRepository;
 
     @Autowired
+    @Lazy
     private PasswordEncoder passwordEncoder;
 
     public User createUser(User user) {
