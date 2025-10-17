@@ -23,20 +23,50 @@ public class Company {
     @Column(length = 500)
     private String description;
 
+    // ✅ YENİ: Şirket tipi (CUSTOMS_BROKER veya CLIENT)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, name = "company_type")
+    private CompanyType companyType = CompanyType.CLIENT;
+
+    // ✅ YENİ: Eğer CLIENT ise, hangi BROKER ile anlaşmalı?
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_broker_id")
+    private Company parentBroker;
+
+    // ✅ YENİ: Broker'ın müşteri listesi
+    @OneToMany(mappedBy = "parentBroker", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Company> clients = new ArrayList<>();
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-    // ✅ Firma-kullanıcı rolleri - One-to-Many ilişki
+    // ✅ MEVCUT: Firma-kullanıcı rolleri
     @OneToMany(mappedBy = "company", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<CompanyUserRole> userRoles = new ArrayList<>();
+
+    // ✅ YENİ: Firma ile ilgili işlemler (CustomsTransaction)
+    @OneToMany(mappedBy = "brokerCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<CustomsTransaction> brokerTransactions = new ArrayList<>();
+
+    @OneToMany(mappedBy = "clientCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<CustomsTransaction> clientTransactions = new ArrayList<>();
 
     public Company() {
     }
 
-    // ✅ Yardımcı metodlar
+    // ✅ YENİ: Helper methods
+    public boolean isBroker() {
+        return CompanyType.CUSTOMS_BROKER.equals(companyType);
+    }
+
+    public boolean isClient() {
+        return CompanyType.CLIENT.equals(companyType);
+    }
+
+    // ✅ MEVCUT: Yardımcı metodlar
     public List<User> getUsers() {
         return userRoles.stream()
                 .map(CompanyUserRole::getUser)
