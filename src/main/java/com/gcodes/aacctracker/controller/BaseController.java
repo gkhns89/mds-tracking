@@ -21,7 +21,7 @@ public class BaseController {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "UP");
         response.put("timestamp", LocalDateTime.now());
-        response.put("message", "MDS Tracking API is running");
+        response.put("message", "AACC Tracker API is running");
         response.put("version", "1.0.0");
 
         return ResponseEntity.ok(response);

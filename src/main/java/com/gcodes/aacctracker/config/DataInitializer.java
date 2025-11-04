@@ -22,7 +22,7 @@ public class DataInitializer {
     private PasswordEncoder passwordEncoder;
 
     // Environment variables veya application.properties'den al
-    @Value("${app.admin.email:admin@mdstracking.com}")
+    @Value("${app.admin.email:dev@gokhan.codes}")
     private String adminEmail;
 
     @Value("${app.admin.password:AdminPassword123!}")

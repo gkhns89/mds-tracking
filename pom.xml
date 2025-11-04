@@ -8,11 +8,11 @@
         <version>3.4.3</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>com.medosasoftware</groupId>
+    <groupId>com.gcodes</groupId>
     <artifactId>aacc-tracker</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>mds-tracking</name>
-    <description>mds-tracking</description>
+    <name>aacc-tracker</name>
+    <description>aacc-tracker</description>
     <url/>
     <licenses>
         <license/>
