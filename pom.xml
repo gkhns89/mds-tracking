@@ -9,7 +9,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.medosasoftware</groupId>
-    <artifactId>mds-tracking</artifactId>
+    <artifactId>aacc-tracker</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>mds-tracking</name>
     <description>mds-tracking</description>
