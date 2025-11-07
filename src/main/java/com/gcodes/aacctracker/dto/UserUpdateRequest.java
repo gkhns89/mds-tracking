@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 @Getter
 @Setter
 public class UserUpdateRequest {
+
     @Email(message = "Invalid email format")
     private String email;
 

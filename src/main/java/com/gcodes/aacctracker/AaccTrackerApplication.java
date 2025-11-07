@@ -3,8 +3,10 @@ package com.gcodes.aacctracker;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication
+@EnableJpaRepositories(basePackages = "com.gcodes.aacctracker.repository")
 public class AaccTrackerApplication {
 
     public static void main(String[] args) {
