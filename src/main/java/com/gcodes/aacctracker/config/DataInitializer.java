@@ -22,13 +22,13 @@ public class DataInitializer {
     private PasswordEncoder passwordEncoder;
 
     // Environment variables veya application.properties'den al
-    @Value("${app.admin.email:dev@gokhan.codes}")
+    @Value("${APP_EMAIL}")
     private String adminEmail;
 
-    @Value("${app.admin.password:AdminPassword123!}")
+    @Value("${APP_PASSWORD}")
     private String adminPassword;
 
-    @Value("${app.admin.username:admin}")
+    @Value("{APP_USERNAME")
     private String adminUsername;
 
     @PostConstruct

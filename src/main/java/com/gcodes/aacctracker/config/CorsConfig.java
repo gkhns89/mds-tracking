@@ -6,18 +6,21 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
-import java.util.List;
 
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
+    @Value("${cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("*") // Tüm origin'lere izin ver (development için)
+                .allowedOrigins(allowedOrigins.split(",")) // application.properties'den yüklenen origin'lere izin ver
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
                 .allowedHeaders("*")
                 .allowCredentials(true)
@@ -29,17 +32,8 @@ public class CorsConfig implements WebMvcConfigurer {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ✅ Development için tüm origin'lere izin ver
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
-
-        // ✅ Production için spesifik domain'leri belirtin
-        // configuration.setAllowedOrigins(Arrays.asList(
-        //     "http://localhost:3000",    // React development
-        //     "http://localhost:4200",    // Angular development
-        //     "http://localhost:8080",    // Vue development
-        //     "https://yourdomain.com",   // Production domain
-        //     "https://www.yourdomain.com"
-        // ));
+        // Aktif profile göre application.properties'den yüklenen origin'leri kullan
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
 
         configuration.setAllowedMethods(Arrays.asList(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
