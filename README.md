@@ -1,273 +1,730 @@
 # AACC Tracker
 
-Gümrük acenteleri ve müşteri firmaları arasındaki iş süreçlerini ve yapılan anlaşmaları takip etmeye yönelik bir yönetim
-sistemi.
+**Gümrük Acenteleri ve Müşteri Firmaları Arasındaki İş Süreçlerini Takip Sistemi**
 
-## İçerik
-
-- Projenin amacı ve genel yapısı
-- Hızlı kurulum ve çalıştırma
-- Kullanılan teknolojiler
-- API yapısı – Tüm ana endpointler ve açıklamaları
-- Roller ve yetkilendirme
-- Ortak hatalar & çözümleri
-- Nasıl katkı sağlanır?
-- İletişim
+Gümrük işlemlerinin, acente anlaşmalarının, kullanıcı ve şirket yönetiminin merkezi şekilde takibini, raporlanmasını ve
+denetlenmesini sağlayan profesyonel bir yönetim sistemi.
 
 ---
 
-## Projenin Amacı
+## 📋 İçindekiler
 
-AACC Tracker; gümrük işlemlerinin, acente anlaşmalarının, kullanıcı ve şirket yönetiminin merkezi şekilde takibini,
-raporlanmasını ve denetlenmesini sağlar.
-
----
-
-## Hızlı Kurulum
-
-1. **Java 17+ gerekmektedir.**
-2. **Veritabanı:** MySQL tercih edilmiştir, `application.local.properties` dosyasından bağlantıları yapılandırınız.
-3. Projeyi klonlayın:
-   ```
-   git clone https://github.com/gkhns89/aacc-tracker.git
-   ```
-4. Gerekli dosyaları yükleyin:
-   ```
-   mvn clean install
-   ```
-5. Ortam değişkenlerini tanımlayın:
-    - `DB_URL`, `DB_USER`, `DB_PASS`
-    - (Varsa) SMTP ayarları, admin email, ihtiyaca göre diğer değişkenler.
-6. Uygulamayı başlatın:
-   ```
-   mvn spring-boot:run
-   ```
-7. İlk kurulumda süper admin oluşturmak için:
-   ```
-   POST /api/setup/create-super-admin
-   {
-     "email": "admin@admin.com",
-     "username": "admin",
-     "password": "sifre"
-   }
-   ```
+- [Özellikler](#-özellikler)
+- [Teknolojiler](#-teknolojiler)
+- [Hızlı Kurulum](#-hızlı-kurulum)
+- [Yapılandırma](#-yapılandırma)
+- [API Dokümantasyonu](#-api-dokümantasyonu)
+- [Roller ve Yetkilendirme](#-roller-ve-yetkilendirme)
+- [Veritabanı Yapısı](#-veritabanı-yapısı)
+- [Postman Koleksiyonu](#-postman-koleksiyonu)
+- [Güvenlik](#-güvenlik)
+- [Hata Ayıklama](#-hata-ayıklama)
+- [Katkıda Bulunma](#-katkıda-bulunma)
+- [Lisans](#-lisans)
 
 ---
 
-## Kullanılan Teknolojiler
+## ✨ Özellikler
 
-- **Backend Framework:** Spring Boot
-- **Dil:** Java
+### 🔐 Güvenlik ve Yetkilendirme
+
+- JWT tabanlı authentication
+- Rol bazlı erişim kontrolü (RBAC)
+- Şirket bazlı yetkilendirme sistemi
+- Şifre sıfırlama özelliği
+- Audit log takibi
+
+### 👥 Kullanıcı Yönetimi
+
+- Kullanıcı oluşturma, güncelleme, silme (soft delete)
+- Şirket bazlı rol atama (ADMIN, MANAGER, USER)
+- Çoklu şirket desteği
+- Kullanıcı profil yönetimi
+
+### 🏢 Şirket Yönetimi
+
+- Gümrük acentesi (CUSTOMS_BROKER) ve müşteri firma (CLIENT) ayrımı
+- Şirket oluşturma, güncelleme, silme
+- Aktif/pasif durum yönetimi
+- Hiyerarşik şirket yapısı
+
+### 📜 Anlaşma Yönetimi
+
+- Broker-Client anlaşma oluşturma
+- Anlaşma durumu takibi (ACTIVE, SUSPENDED, TERMINATED)
+- Otomatik anlaşma numarası oluşturma
+- Anlaşma istatistikleri ve raporlama
+
+### 📦 Gümrük İşlemleri
+
+- Detaylı işlem kaydı (16+ alan)
+- Dosya numarası ile takip
+- İşlem durumu yönetimi
+- Gecikme takibi ve raporlama
+- Tarih bazlı sorgulama
+
+### 📊 Dashboard ve Raporlama
+
+- Rol bazlı dashboard
+- İstatistikler ve grafikler
+- Son aktiviteler
+- Performans metrikleri
+
+---
+
+## 🛠 Teknolojiler
+
+### Backend
+
+- **Framework:** Spring Boot 3.4.3
+- **Language:** Java 21
+- **Security:** Spring Security + JWT
 - **ORM:** Hibernate/JPA
-- **Veri Tabanı:** MySQL
-- **Authentication:** JWT + Rol tabanlı yetkilendirme (SUPER_ADMIN, BROKER, CLIENT vs.)
+- **Database:** MySQL 8.x
+- **Build Tool:** Maven
+
+### Kütüphaneler
+
+- **Lombok** - Boilerplate kod azaltma
+- **JJWT** - JWT token işlemleri
+- **Dotenv** - Environment variable yönetimi
+- **Validation** - Input validasyon
 
 ---
 
-## API Endpoint Yapısı
+## 🚀 Hızlı Kurulum
 
-Ana endpointler aşağıda özetlenmiştir. Detaylar için [Postman koleksiyonu](#) dosyasına bakınız.
+### Gereksinimler
 
-### Genel Test ve Sağlık
+- Java 17 veya üzeri
+- MySQL 8.0 veya üzeri
+- Maven 3.6 veya üzeri
 
-| Metod | Endpoint         | Açıklama            |
-|-------|------------------|---------------------|
-| GET   | `/api/health`    | Servis çalışıyor mu |
-| GET   | `/api/cors-test` | CORS kontrolü       |
+### Adım 1: Projeyi İndirin
 
-### Setup (İlk kurulum/süper admin)
+```bash
+git clone https://github.com/gkhns89/aacc-tracker.git
+cd aacc-tracker
+```
 
-| Metod | Endpoint                        | Açıklama                              |
-|-------|---------------------------------|---------------------------------------|
-| POST  | `/api/setup/create-super-admin` | İlk süper admin kullanıcıyı oluşturur |
-| GET   | `/api/setup/status`             | Setup durumunu döndürür               |
+### Adım 2: Veritabanını Hazırlayın
 
-### Kullanıcı İşlemleri
+```sql
+CREATE
+DATABASE aacc_tracker CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
 
-| Metod  | Endpoint                                              | Açıklama                             |
-|--------|-------------------------------------------------------|--------------------------------------|
-| POST   | `/api/users/{userId}/assign-role`                     | Kullanıcıya rol atama                |
-| DELETE | `/api/users/{userId}/remove-from-company/{companyId}` | Şirketten kullanıcı çıkarma          |
-| GET    | `/api/users/by-email/{email}`                         | Email ile kullanıcı sorgula          |
-| GET    | `/api/users/{id}`                                     | ID ile kullanıcı getirme             |
-| GET    | `/api/users/my-companies`                             | Kullanıcının erişebileceği şirketler |
-| GET    | `/api/users/manageable-companies`                     | Yönetebileceği şirketler             |
-| GET    | `/api/users/company/{companyId}`                      | Şirkete bağlı kullanıcılar           |
+### Adım 3: Environment Değişkenlerini Ayarlayın
 
-### Anlaşma İşlemleri
+Proje kök dizininde `.env` dosyası oluşturun:
 
-| Metod | Endpoint                                      | Açıklama                          |
-|-------|-----------------------------------------------|-----------------------------------|
-| POST  | `/api/agreements`                             | Yeni anlaşma oluştur              |
-| PUT   | `/api/agreements/{id}`                        | Anlaşma güncelle                  |
-| POST  | `/api/agreements/{id}/suspend`                | Anlaşma Askıya Al (Suspend)       |
-| POST  | `/api/agreements/{id}/terminate`              | Anlaşma Sonlandır                 |
-| POST  | `/api/agreements/{id}/reactivate`             | Anlaşmayı yeniden aktifleştir     |
-| GET   | `/api/agreements/{id}`                        | Tek anlaşmayı getir               |
-| GET   | `/api/agreements/by-number/{agreementNumber}` | Anlaşma numarası ile getir        |
-| GET   | `/api/agreements`                             | SUPER_ADMIN tüm anlaşmaları çeker |
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=aacc_tracker
+DB_USER=root
+DB_PASSWORD=your_password
 
-### Gümrük İşlemleri
+# JWT Configuration
+JWT_SECRET=your-very-long-secret-key-at-least-256-bits
+JWT_EXPIRATION=3600000
 
-| Metod | Endpoint                                    | Açıklama                        |
-|-------|---------------------------------------------|---------------------------------|
-| POST  | `/api/transactions/{id}/complete`           | İşlemi tamamla                  |
-| POST  | `/api/transactions/{id}/cancel`             | İşlemi iptal et                 |
-| GET   | `/api/transactions/{id}`                    | Tek işlem bilgisi çek           |
-| GET   | `/api/transactions/by-file-no/{fileNo}`     | Dosya numarasına göre işlem çek |
-| GET   | `/api/transactions/broker/{brokerId}`       | Belirli brokerage işlemleri     |
-| GET   | `/api/transactions/recent`                  | Son işlemleri getir             |
-| GET   | `/api/transactions/stats/broker/{brokerId}` | Broker’a ait istatistikler      |
+# Application Configuration
+APP_PORT=8080
 
-### Dashboard
+# Default Super Admin (İlk kurulum için)
+APP_EMAIL=admin@admin.com
+APP_USERNAME=admin
+APP_PASSWORD=Admin123!
+```
 
-| Metod | Endpoint                           | Açıklama                  |
-|-------|------------------------------------|---------------------------|
-| GET   | `/api/dashboard/stats`             | Dashboard istatistikleri  |
-| GET   | `/api/dashboard/recent-activities` | Son aktiviteler           |
-| GET   | `/api/dashboard/menu-items`        | Kullanıcıya uygun menüler |
+### Adım 4: Bağımlılıkları Yükleyin
 
----
+```bash
+mvn clean install
+```
 
-## Roller ve Yetkilendirme (Security)
+### Adım 5: Uygulamayı Başlatın
 
-- **SUPER_ADMIN**: Şirket oluşturma, kullanıcı yönetimi, tüm anlaşmalara erişim vb.
-- **BROKER/CLIENT**: Kendi işlemlerini ve anlaşmalarını görebilir.
-- **JWT Authentication**: Her API çağrısında HTTP `Authorization: Bearer <JWT TOKEN>` zorunlu.
+```bash
+mvn spring-boot:run
+```
 
-Public endpoints: `/api/auth/**`, `/api/setup/**`, `/api/health`, `/api/cors-test`
-Diğer işlemler için authentication gerekmekte.
+veya
 
----
+```bash
+./mvnw spring-boot:run
+```
 
-## Hatalar ve Genel Çözümler
+### Adım 6: İlk Giriş
 
-- `401 Unauthorized`: Token eksik/hatalı, giriş yapmanız gerek.
-- `403 Forbidden`: Yetkiniz yok, rolünüzü kontrol edin.
-- `400 Bad Request`: Eksik/yanlış veri.
-- Sunucu hatalarında sistem loglarından ve response mesajından bilgi alabilirsiniz.
+Uygulama otomatik olarak süper admin kullanıcısı oluşturacaktır:
+
+- **Email:** `.env` dosyasındaki `APP_EMAIL`
+- **Şifre:** `.env` dosyasındaki `APP_PASSWORD`
+
+**⚠️ ÖNEMLİ:** İlk giriş sonrası varsayılan şifreyi mutlaka değiştirin!
 
 ---
 
-## Katkı Sağlama
+## ⚙️ Yapılandırma
 
-Pull request ile katkı için önce bir issue açın, kodunuz ve testler ile branch üzerinden ilerleyin.
+### Profiller
+
+Uygulama iki farklı profille çalışabilir:
+
+#### Local Development (Varsayılan)
+
+```properties
+spring.profiles.active=local
+```
+
+- Veritabanı auto-create
+- SQL logları aktif
+- CORS gevşek
+
+#### Production
+
+```properties
+spring.profiles.active=prod
+```
+
+- Veritabanı validate
+- SQL logları kapalı
+- CORS sıkı
+
+### CORS Ayarları
+
+`application-local.properties` veya `application-prod.properties` dosyasında:
+
+```properties
+cors.allowed-origins=http://localhost:3000,http://localhost:4200
+cors.allowed-methods=GET,POST,PUT,DELETE,OPTIONS,PATCH
+cors.allowed-headers=*
+cors.allow-credentials=true
+```
 
 ---
 
-## İletişim
+## 📚 API Dokümantasyonu
 
-Sorular için [github issues](https://github.com/gkhns89/aacc-tracker/issues) kullanabilir veya proje sahibi ile
-iletişime geçebilirsiniz.
-
----
-
-# Postman Koleksiyon Şablonu
-
-Projenin ana endpointleri ve örnek istekler için aşağıdaki JSON veya Markdown şablonunu Postman’a import edebilirsiniz.
+### Base URL
 
 ```
+http://localhost:8080/api
+```
+
+### Authentication
+
+Çoğu endpoint JWT token gerektirir:
+
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+### Ana Endpoint Kategorileri
+
+#### 🔧 Health & Setup
+
+- `GET /health` - Servis durumu
+- `GET /cors-test` - CORS kontrolü
+- `GET /setup/status` - Setup durumu
+- `POST /setup/create-super-admin` - İlk süper admin
+
+#### 🔐 Authentication
+
+- `POST /auth/register` - Kullanıcı kaydı
+- `POST /auth/login` - Giriş (token alır)
+- `POST /auth/forgot-password` - Şifre sıfırlama talebi
+- `POST /auth/reset-password` - Şifre sıfırlama
+
+#### 👥 User Management
+
+- `POST /users/create` - Kullanıcı oluştur (SUPER_ADMIN)
+- `GET /users/all` - Tüm kullanıcılar
+- `GET /users/:id` - Kullanıcı detayı
+- `PUT /users/:id` - Kullanıcı güncelle
+- `DELETE /users/:id` - Kullanıcı sil
+- `POST /users/:userId/assign-role` - Rol ata
+- `DELETE /users/:userId/remove-from-company/:companyId` - Şirketten çıkar
+- `GET /users/my-companies` - Erişilebilir şirketler
+- `GET /users/manageable-companies` - Yönetilebilir şirketler
+- `GET /users/company/:companyId` - Şirket kullanıcıları
+- `GET /users/profile` - Mevcut kullanıcı profili
+
+#### 🏢 Company Management
+
+- `POST /companies/create` - Şirket oluştur (SUPER_ADMIN)
+- `GET /companies` - Tüm şirketler
+- `GET /companies/:id` - Şirket detayı
+- `PUT /companies/:id` - Şirket güncelle
+- `DELETE /companies/:id` - Şirket sil
+- `PATCH /companies/:id/status` - Durum değiştir
+- `GET /companies/my-companies` - Erişilebilir şirketler
+- `GET /companies/manageable` - Yönetilebilir şirketler
+
+#### 📜 Agreement Management
+
+- `POST /agreements` - Anlaşma oluştur
+- `GET /agreements` - Tüm anlaşmalar (SUPER_ADMIN)
+- `GET /agreements/:id` - Anlaşma detayı
+- `GET /agreements/by-number/:agreementNumber` - Numaraya göre
+- `PUT /agreements/:id` - Anlaşma güncelle
+- `POST /agreements/:id/suspend` - Anlaşmayı askıya al
+- `POST /agreements/:id/terminate` - Anlaşmayı sonlandır
+- `POST /agreements/:id/reactivate` - Anlaşmayı aktifleştir
+- `GET /agreements/broker/:brokerId` - Broker anlaşmaları
+- `GET /agreements/client/:clientId` - Client anlaşmaları
+- `GET /agreements/check` - Aktif anlaşma kontrolü
+- `GET /agreements/recent` - Son anlaşmalar
+- `GET /agreements/stats/broker/:brokerId` - Broker istatistikleri
+- `GET /agreements/stats/client/:clientId` - Client istatistikleri
+
+#### 📦 Customs Transactions
+
+- `POST /transactions` - İşlem oluştur
+- `GET /transactions/:id` - İşlem detayı
+- `GET /transactions/by-file-no/:fileNo` - Dosya numarasına göre
+- `PUT /transactions/:id` - İşlem güncelle
+- `PATCH /transactions/:id/status` - Durum güncelle
+- `POST /transactions/:id/complete` - İşlemi tamamla
+- `POST /transactions/:id/cancel` - İşlemi iptal et
+- `GET /transactions/broker/:brokerId` - Broker işlemleri
+- `GET /transactions/client/:clientId` - Client işlemleri
+- `GET /transactions/delayed` - Gecikmeli işlemler
+- `GET /transactions/date-range` - Tarih aralığı
+- `GET /transactions/recent` - Son işlemler
+- `GET /transactions/stats/broker/:brokerId` - Broker istatistikleri
+
+#### 📊 Dashboard
+
+- `GET /dashboard/stats` - Dashboard istatistikleri
+- `GET /dashboard/recent-activities` - Son aktiviteler
+- `GET /dashboard/menu-items` - Menü öğeleri
+
+### Örnek İstekler
+
+#### Login
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@admin.com",
+    "password": "Admin123!"
+  }'
+```
+
+Response:
+
+```json
 {
-  "info": {
-    "name": "AACC Tracker API",
-    "_postman_id": "aacc-tracker-collection",
-    "description": "AACC Tracker için API örnekleri ve şablonları.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:8080/api/health",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "health"]
-        }
-      }
-    },
-    {
-      "name": "Create Super Admin",
-      "request": {
-        "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"email\": \"admin@domain.com\",\n  \"username\": \"admin\",\n  \"password\": \"sifre\"\n}"
-        },
-        "url": {
-          "raw": "http://localhost:8080/api/setup/create-super-admin",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "setup", "create-super-admin"]
-        }
-      }
-    },
-    {
-      "name": "Get Agreements (SUPER_ADMIN)",
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer <JWT_TOKEN>"}],
-        "url": {
-          "raw": "http://localhost:8080/api/agreements",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "agreements"]
-        }
-      }
-    },
-    {
-      "name": "Create Agreement",
-      "request": {
-        "method": "POST",
-        "header": [
-          {"key": "Content-Type", "value": "application/json"},
-          {"key": "Authorization", "value": "Bearer <JWT_TOKEN>"}
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"brokerId\": 1,\n  \"clientId\": 2,\n  \"agreementDetails\": \"Detaylar...\"\n}"
-        },
-        "url": {
-          "raw": "http://localhost:8080/api/agreements",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "agreements"]
-        }
-      }
-    },
-    {
-      "name": "Get Recent Transactions",
-      "request": {
-        "method": "GET",
-        "header": [{"key": "Authorization", "value": "Bearer <JWT_TOKEN>"}],
-        "url": {
-          "raw": "http://localhost:8080/api/transactions/recent",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "8080",
-          "path": ["api", "transactions", "recent"]
-        }
-      }
-    }
-    // Diğer endpoint örnekleri benzer şekilde eklenebilir.
-  ]
+  "token": "eyJhbGciOiJIUzI1NiJ9..."
 }
 ```
 
-Koleksiyonu `.json` olarak kaydedip Postman'da import edebilirsin.
+#### Şirket Oluşturma
+
+```bash
+curl -X POST http://localhost:8080/api/companies/create \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ABC Gümrük Müşavirliği",
+    "description": "Profesyonel gümrük hizmetleri",
+    "companyType": "CUSTOMS_BROKER",
+    "isActive": true
+  }'
+```
+
+#### İşlem Oluşturma
+
+```bash
+curl -X POST http://localhost:8080/api/transactions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brokerCompanyId": 1,
+    "clientCompanyId": 2,
+    "fileNo": "FILE-2024-001",
+    "recipientName": "ABC İthalat A.Ş.",
+    "weight": 1500.50,
+    "tax": 25000.00
+  }'
+```
 
 ---
 
-Daha gelişmiş örnekler, field açıklamaları ve hata senaryoları için projenin controller/service dosyalarına
-bakabilirsiniz. API endpointlerini özelleştirmen ve koleksiyona eklemen mümkündür.
+## 🔒 Roller ve Yetkilendirme
+
+### Global Roller
+
+#### SUPER_ADMIN
+
+- **Yetkileri:**
+    - Tüm şirketleri görüntüleme ve yönetme
+    - Kullanıcı oluşturma, silme
+    - Sistem ayarlarını değiştirme
+    - Tüm anlaşmaları ve işlemleri görüntüleme
+    - Şirket durumlarını değiştirme
+
+#### USER
+
+- **Yetkileri:**
+    - Atandığı şirketleri görüntüleme
+    - Şirket rolüne göre işlem yapma
+
+### Şirket Rolleri
+
+#### COMPANY_ADMIN
+
+- **Yetkileri:**
+    - Şirket bilgilerini güncelleme
+    - Kullanıcı ekleme/çıkarma
+    - Rol atama (tüm roller)
+    - Anlaşma yönetimi
+    - İşlem oluşturma ve güncelleme
+
+#### COMPANY_MANAGER
+
+- **Yetkileri:**
+    - Kullanıcı ekleme/çıkarma
+    - Rol atama (sadece COMPANY_USER)
+    - İşlem oluşturma ve güncelleme
+    - Şirket bilgilerini görüntüleme
+
+#### COMPANY_USER
+
+- **Yetkileri:**
+    - Şirket bilgilerini görüntüleme
+    - İşlemleri görüntüleme (sadece okuma)
+    - Kendi profilini güncelleme
+
+### Özel Kurallar
+
+#### Broker (CUSTOMS_BROKER) Şirketi
+
+- ✅ Client şirketler ile anlaşma yapabilir
+- ✅ İşlem oluşturabilir ve yönetebilir
+- ✅ Müşteri istatistiklerini görebilir
+- ❌ Başka broker'ın işlemlerini göremez
+
+#### Client Şirketi
+
+- ✅ Kendi işlemlerini görüntüleyebilir (READ ONLY)
+- ✅ İstatistikleri görebilir
+- ❌ İşlem oluşturamaz veya güncelleyemez
+- ❌ Başka client'in işlemlerini göremez
 
 ---
 
-Herhangi özel bir alan, endpoint veya örnek isteği istiyorsan belirtmen yeterli, detay ekleyebilirim!
+## 🗄 Veritabanı Yapısı
+
+### Ana Tablolar
+
+#### users
+
+```sql
+- id (PK)
+- email (UNIQUE)
+- username (UNIQUE)
+- password (hashed)
+- global_role (SUPER_ADMIN, USER)
+- is_active
+- created_at
+```
+
+#### companies
+
+```sql
+- id (PK)
+- name (UNIQUE)
+- description
+- company_type (CUSTOMS_BROKER, CLIENT)
+- parent_broker_id (FK -> companies)
+- is_active
+- created_at
+```
+
+#### company_user_roles
+
+```sql
+- id (PK)
+- user_id (FK -> users)
+- company_id (FK -> companies)
+- role (COMPANY_ADMIN, COMPANY_MANAGER, COMPANY_USER)
+- assigned_by (FK -> users)
+- assigned_at
+```
+
+#### agency_agreements
+
+```sql
+- id (PK)
+- broker_company_id (FK -> companies)
+- client_company_id (FK -> companies)
+- created_by (FK -> users)
+- status (ACTIVE, SUSPENDED, TERMINATED)
+- agreement_number (UNIQUE)
+- start_date
+- end_date
+- notes
+- created_at
+- updated_at
+```
+
+#### customs_transactions
+
+```sql
+- id (PK)
+- broker_company_id (FK -> companies)
+- client_company_id (FK -> companies)
+- created_by_user_id (FK -> users)
+- file_no (UNIQUE)
+- recipient_name
+- customs_warehouse
+- gate
+- weight
+- tax
+- sender_name
+- warehouse_arrival_date
+- registration_date
+- declaration_number
+- line_closure_date
+- import_processing_time
+- withdrawal_date
+- description
+- total_processing_time
+- delay_reason
+- status (PENDING, IN_PROGRESS, COMPLETED, CANCELLED)
+- created_at
+- updated_at
+- last_modified_by
+```
+
+#### audit_logs
+
+```sql
+- id (PK)
+- user_id (FK -> users)
+- action
+- entity_type
+- entity_id
+- timestamp
+- change_details (JSON)
+- ip_address
+- result (SUCCESS, FAILURE)
+- error_message
+```
+
+---
+
+## 📮 Postman Koleksiyonu
+
+Projenin tam Postman koleksiyonunu indirip kullanabilirsiniz.
+
+### İçerik
+
+- ✅ Tüm endpoint'ler
+- ✅ Örnek request body'ler
+- ✅ Otomatik token yönetimi
+- ✅ Environment değişkenleri
+- ✅ Test script'leri
+
+### Kullanım
+
+1. Postman'ı açın
+2. `Import` butonuna tıklayın
+3. Yukarıdaki JSON'u yapıştırın veya dosya olarak import edin
+4. Collection Variables'da `base_url`'i ayarlayın
+5. `Login` isteğini yapın (token otomatik kaydedilir)
+6. Diğer endpointleri test edin
+
+### Environment Variables
+
+```json
+{
+  "base_url": "http://localhost:8080/api",
+  "token": ""
+  // Login sonrası otomatik dolar
+}
+```
+
+---
+
+## 🔐 Güvenlik
+
+### Best Practices
+
+1. **JWT Secret:** Üretimde mutlaka güçlü ve uzun bir secret kullanın (minimum 256 bit)
+2. **Şifre Politikası:** Minimum 8 karakter, büyük/küçük harf, sayı ve özel karakter
+3. **HTTPS:** Üretimde mutlaka HTTPS kullanın
+4. **Rate Limiting:** API rate limiting ekleyin
+5. **Input Validation:** Tüm inputları validate edin
+6. **SQL Injection:** JPA kullandığı için otomatik korumalı
+7. **XSS:** Spring Security otomatik korumalı
+
+### Güvenlik Özellikleri
+
+- ✅ JWT token authentication
+- ✅ Password encryption (BCrypt)
+- ✅ CORS protection
+- ✅ CSRF protection (API için devre dışı)
+- ✅ SQL injection protection (JPA)
+- ✅ Role-based access control
+- ✅ Audit logging
+- ✅ Soft delete (veri kaybı önleme)
+
+---
+
+## 🐛 Hata Ayıklama
+
+### Yaygın Hatalar ve Çözümler
+
+#### 1. Veritabanı Bağlantı Hatası
+
+```
+Error: Could not connect to database
+```
+
+**Çözüm:**
+
+- MySQL servisinin çalıştığını kontrol edin
+- `.env` dosyasındaki veritabanı bilgilerini kontrol edin
+- Veritabanının oluşturulduğunu kontrol edin
+
+#### 2. JWT Token Hatası
+
+```
+401 Unauthorized
+```
+
+**Çözüm:**
+
+- Token'ın geçerli olduğunu kontrol edin
+- Token'ın Authorization header'ında olduğunu kontrol edin
+- Format: `Bearer <token>`
+
+#### 3. CORS Hatası
+
+```
+Access to XMLHttpRequest blocked by CORS policy
+```
+
+**Çözüm:**
+
+- `application.properties` dosyasında CORS ayarlarını kontrol edin
+- Frontend URL'sinin allowed origins listesinde olduğunu kontrol edin
+
+#### 4. Port Zaten Kullanılıyor
+
+```
+Port 8080 is already in use
+```
+
+**Çözüm:**
+
+- `.env` dosyasında `APP_PORT` değiştirebilirsiniz
+- Veya çalışan servisi durdurun
+
+### Log Seviyeleri
+
+Development için:
+
+```properties
+logging.level.com.gcodes.aacctracker=DEBUG
+logging.level.org.springframework.security=DEBUG
+```
+
+Production için:
+
+```properties
+logging.level.root=INFO
+logging.level.com.gcodes.aacctracker=INFO
+```
+
+---
+
+## 🤝 Katkıda Bulunma
+
+Katkılarınızı bekliyoruz! Lütfen şu adımları takip edin:
+
+1. Fork yapın
+2. Feature branch oluşturun (`git checkout -b feature/AmazingFeature`)
+3. Değişikliklerinizi commit edin (`git commit -m 'Add some AmazingFeature'`)
+4. Branch'inizi push edin (`git push origin feature/AmazingFeature`)
+5. Pull Request oluşturun
+
+### Geliştirme Kuralları
+
+- Clean Code prensiplerini takip edin
+- Javadoc yorumları ekleyin
+- Unit testler yazın
+- Commit mesajlarını anlamlı tutun
+- Branch isimlendirmede convention kullanın
+
+---
+
+## 📄 Lisans
+
+Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için `LICENSE` dosyasına bakın.
+
+---
+
+## 📞 İletişim
+
+**Proje Sahibi:** Gökhan
+
+- GitHub: [@gkhns89](https://github.com/gkhns89)
+- Issues: [GitHub Issues](https://github.com/gkhns89/aacc-tracker/issues)
+
+---
+
+## 🎯 Roadmap
+
+### v1.0 (Mevcut)
+
+- ✅ Kullanıcı yönetimi
+- ✅ Şirket yönetimi
+- ✅ Anlaşma yönetimi
+- ✅ Gümrük işlemleri
+- ✅ Dashboard
+
+### v1.1 (Planlanan)
+
+- 📧 Email bildirim sistemi
+- 📱 SMS bildirim
+- 📄 PDF rapor oluşturma
+- 📊 Gelişmiş analitik
+- 🔍 Gelişmiş arama ve filtreleme
+
+### v2.0 (Gelecek)
+
+- 📱 Mobile uygulama
+- 🤖 Otomatik bildirimler
+- 📈 Tahminleme ve AI
+- 🌍 Çoklu dil desteği
+- ☁️ Cloud deployment
+
+---
+
+## 🙏 Teşekkürler
+
+Bu projeyi geliştirirken kullanılan açık kaynak teknolojilere ve topluluğa teşekkürler:
+
+- Spring Boot Team
+- Hibernate Team
+- JWT Community
+- MySQL Team
+- Maven Community
+
+---
+
+**Not:** Bu proje aktif olarak geliştirilmektedir. Önerileriniz ve geri bildirimleriniz için GitHub Issues
+kullanabilirsiniz.
+
+---
+
+**Son Güncelleme:** Kasım 2025
+**Versiyon:** 1.0.0-SNAPSHOT

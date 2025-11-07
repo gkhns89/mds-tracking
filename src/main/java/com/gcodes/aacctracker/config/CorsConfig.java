@@ -1,65 +1,59 @@
 package com.gcodes.aacctracker.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
-public class CorsConfig implements WebMvcConfigurer {
+public class CorsConfig {
 
     @Value("${cors.allowed-origins}")
     private String allowedOrigins;
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                .allowedOrigins(allowedOrigins.split(",")) // application.properties'den yüklenen origin'lere izin ver
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600); // Preflight cache süresi (1 saat)
-    }
+    @Value("${cors.allowed-methods}")
+    private String allowedMethods;
 
-    // ✅ Spring Security ile uyumlu CORS bean'i
+    @Value("${cors.allowed-headers}")
+    private String allowedHeaders;
+
+    @Value("${cors.allow-credentials}")
+    private boolean allowCredentials;
+
+    @Value("${cors.max-age}")
+    private long maxAge;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Aktif profile göre application.properties'den yüklenen origin'leri kullan
-        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        // Origin'leri property'den oku
+        List<String> origins = Arrays.asList(allowedOrigins.split(","));
+        if (origins.contains("*")) {
+            configuration.addAllowedOriginPattern("*");
+        } else {
+            configuration.setAllowedOrigins(origins);
+        }
 
-        configuration.setAllowedMethods(Arrays.asList(
-                "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
-        ));
+        configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
+        configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
+        configuration.setAllowCredentials(allowCredentials);
+        configuration.setMaxAge(maxAge);
 
-        configuration.setAllowedHeaders(Arrays.asList(
-                "Authorization",
-                "Content-Type",
-                "X-Requested-With",
-                "Accept",
-                "Origin",
-                "Access-Control-Request-Method",
-                "Access-Control-Request-Headers"
-        ));
-
+        // İsteğe bağlı: frontend'in okumasına izin verilen header'lar
         configuration.setExposedHeaders(Arrays.asList(
+                "Authorization",
                 "Access-Control-Allow-Origin",
-                "Access-Control-Allow-Credentials",
-                "Authorization"
+                "Access-Control-Allow-Credentials"
         ));
-
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", configuration);
+        source.registerCorsConfiguration("/**", configuration);
 
         return source;
     }
