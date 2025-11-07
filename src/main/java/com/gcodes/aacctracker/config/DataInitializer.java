@@ -28,7 +28,7 @@ public class DataInitializer {
     @Value("${APP_PASSWORD}")
     private String adminPassword;
 
-    @Value("{APP_USERNAME")
+    @Value("${APP_USERNAME}")
     private String adminUsername;
 
     @PostConstruct
