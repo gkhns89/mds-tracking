@@ -1,14 +1,11 @@
 package com.gcodes.aacctracker.service;
 
 import com.gcodes.aacctracker.dto.UserUpdateRequest;
-import com.gcodes.aacctracker.model.Company;
-import com.gcodes.aacctracker.model.CompanyRole;
-import com.gcodes.aacctracker.model.CompanyUserRole;
-import com.gcodes.aacctracker.model.User;
+import com.gcodes.aacctracker.exception.LimitExceededException;
 import com.gcodes.aacctracker.model.*;
 import com.gcodes.aacctracker.repository.CompanyRepository;
-import com.gcodes.aacctracker.repository.CompanyUserRoleRepository;
 import com.gcodes.aacctracker.repository.UserRepository;
+import com.gcodes.aacctracker.repository.UsageTrackingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,12 +37,28 @@ public class UserService implements UserDetailsService {
     private CompanyRepository companyRepository;
 
     @Autowired
-    private CompanyUserRoleRepository companyUserRoleRepository;
+    private LimitCheckService limitCheckService;
+
+    @Autowired
+    private UsageTrackingRepository usageTrackingRepository;
 
     @Autowired
     @Lazy
     private PasswordEncoder passwordEncoder;
 
+    // ==========================================
+    // KULLANICI OLUŞTURMA VE GÜNCELLEME
+    // ==========================================
+
+    /**
+     * Kullanıcı oluştur (limit kontrolü ile)
+     * <p>
+     * KURALLAR:
+     * - Email ve username benzersiz olmalı
+     * - BROKER_ADMIN/BROKER_USER ise abonelik limiti kontrolü yapılır
+     * - CLIENT_USER ise, müşteri firması başına sadece 1 kullanıcı olabilir
+     * - UsageTracking otomatik güncellenir
+     */
     public User createUser(User user) {
         // Email uniqueness kontrolü
         if (userRepository.findByEmail(user.getEmail()).isPresent()) {
@@ -57,10 +70,61 @@ public class UserService implements UserDetailsService {
             throw new RuntimeException("Username already exists: " + user.getUsername());
         }
 
-        return userRepository.save(user);
+        // ✅ BROKER_ADMIN veya BROKER_USER ise limit kontrolü
+        if (user.isBrokerStaff() && user.getCompany() != null) {
+            Company company = user.getCompany();
+            Company brokerCompany = company.getBrokerCompany();
+
+            if (brokerCompany == null) {
+                throw new RuntimeException("Cannot determine broker company for user");
+            }
+
+            // Limit kontrolü yap
+            if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
+                throw new LimitExceededException(
+                        "User limit exceeded. Remaining quota: " + remaining
+                );
+            }
+        }
+
+        // ✅ CLIENT_USER ise, müşteri firmasına zaten kullanıcı var mı kontrol et
+        if (user.isClientUser() && user.getCompany() != null) {
+            Company clientCompany = user.getCompany();
+
+            // Bu müşteri firmasına ait başka aktif kullanıcı var mı?
+            long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
+            if (existingUsers > 0) {
+                throw new RuntimeException(
+                        "This client company already has a user. Only one user per client company is allowed."
+                );
+            }
+        }
+
+        User savedUser = userRepository.save(user);
+
+        // ✅ UsageTracking'i güncelle
+        if (savedUser.isBrokerStaff() && savedUser.getCompany() != null) {
+            updateUsageTrackingAfterUserAdd(savedUser);
+        }
+
+        logger.info("User created: {} - Role: {} - Company: {}",
+                savedUser.getEmail(),
+                savedUser.getGlobalRole(),
+                savedUser.getCompany() != null ? savedUser.getCompany().getName() : "N/A");
+
+        return savedUser;
     }
 
-    // ✅ YENİ: Kullanıcı güncelleme metodu
+    /**
+     * Kullanıcı güncelle
+     * <p>
+     * GÜNCELLENEBİLİR ALANLAR:
+     * - Email (uniqueness kontrolü ile)
+     * - Username (uniqueness kontrolü ile)
+     * - Password (encode edilerek)
+     * - IsActive (sadece SUPER_ADMIN veya BROKER_ADMIN)
+     */
     public User updateUser(Long userId, UserUpdateRequest request, User updatingUser) {
         User userToUpdate = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
@@ -88,144 +152,167 @@ public class UserService implements UserDetailsService {
         // Şifre güncellenecekse encode et
         if (StringUtils.hasText(request.getPassword())) {
             userToUpdate.setPassword(passwordEncoder.encode(request.getPassword()));
+            logger.info("Password updated for user: {}", userToUpdate.getEmail());
         }
 
-        // Aktiflik durumu - sadece SUPER_ADMIN değiştirebilir
+        // Aktiflik durumu - sadece SUPER_ADMIN veya BROKER_ADMIN değiştirebilir
         if (request.getIsActive() != null) {
-            if (!updatingUser.isSuperAdmin()) {
-                throw new RuntimeException("Only SUPER_ADMIN can change user active status");
+            if (!updatingUser.isSuperAdmin() && !updatingUser.isBrokerAdmin()) {
+                throw new RuntimeException("Only SUPER_ADMIN or BROKER_ADMIN can change user active status");
             }
-            userToUpdate.setIsActive(request.getIsActive());
+
+            // Kullanıcı devre dışı bırakılıyorsa, UsageTracking'i güncelle
+            if (!request.getIsActive() && userToUpdate.getIsActive()) {
+                userToUpdate.setIsActive(false);
+                updateUsageTrackingAfterUserRemove(userToUpdate);
+                logger.info("User deactivated: {}", userToUpdate.getEmail());
+            }
+            // Kullanıcı aktifleştiriliyorsa, UsageTracking'i güncelle
+            else if (request.getIsActive() && !userToUpdate.getIsActive()) {
+                // Aktifleştirmeden önce limit kontrolü yap
+                if (userToUpdate.isBrokerStaff() && userToUpdate.getCompany() != null) {
+                    Company brokerCompany = userToUpdate.getBrokerCompany();
+                    if (brokerCompany != null && !limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                        throw new LimitExceededException("Cannot reactivate user: User limit exceeded");
+                    }
+                }
+
+                userToUpdate.setIsActive(true);
+                updateUsageTrackingAfterUserAdd(userToUpdate);
+                logger.info("User activated: {}", userToUpdate.getEmail());
+            }
         }
 
         return userRepository.save(userToUpdate);
     }
 
-    // ✅ YENİ: Kullanıcı silme (soft delete)
+    /**
+     * Kullanıcı silme (soft delete)
+     * <p>
+     * NOT: Kullanıcı tamamen silinmez, sadece devre dışı bırakılır (is_active = false)
+     */
     public void deleteUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        // Soft delete - aktiflik durumunu false yap
+        // Soft delete
         user.setIsActive(false);
         userRepository.save(user);
+
+        // UsageTracking'i güncelle
+        updateUsageTrackingAfterUserRemove(user);
 
         logger.info("User soft deleted: {} (ID: {})", user.getEmail(), userId);
     }
 
-    // ✅ YENİ: Yetki bazlı kullanıcı listesi
+    // ==========================================
+    // KULLANICI SORGULAMA
+    // ==========================================
+
+    /**
+     * Tüm kullanıcıları getir (yetki bazlı)
+     * <p>
+     * - SUPER_ADMIN: Tüm kullanıcıları görebilir
+     * - BROKER_ADMIN: Kendi firmasındaki + müşteri firmalarındaki kullanıcıları görebilir
+     * - BROKER_USER: Sadece kendisini görebilir
+     * - CLIENT_USER: Sadece kendisini görebilir
+     */
     public List<User> getAllUsers(User currentUser) {
         if (currentUser.isSuperAdmin()) {
             // SUPER_ADMIN tüm kullanıcıları görebilir
             return userRepository.findAll();
-        } else {
-            // Normal kullanıcılar sadece kendi şirketlerindeki kullanıcıları görebilir
-            List<Company> manageableCompanies = getUserManageableCompanies(currentUser);
-            List<User> users = new ArrayList<>();
+        } else if (currentUser.isBrokerAdmin()) {
+            // BROKER_ADMIN kendi firmasındaki tüm kullanıcıları + müşteri kullanıcılarını görebilir
+            Company brokerCompany = currentUser.getCompany();
 
-            for (Company company : manageableCompanies) {
-                List<User> companyUsers = getCompanyUsers(company.getId());
-                for (User user : companyUsers) {
-                    if (!users.contains(user)) {
-                        users.add(user);
-                    }
-                }
+            List<User> allUsers = new ArrayList<>();
+
+            // 1. Kendi firmasındaki broker kullanıcıları
+            allUsers.addAll(userRepository.findByCompanyAndIsActiveTrue(brokerCompany));
+
+            // 2. Müşteri firmalarının kullanıcıları
+            List<Company> clientCompanies = companyRepository.findByParentBrokerAndIsActiveTrue(brokerCompany);
+            for (Company client : clientCompanies) {
+                allUsers.addAll(userRepository.findByCompanyAndIsActiveTrue(client));
             }
 
-            return users;
-        }
-    }
-
-    // ✅ MEVCUT: Diğer metodlar (değişiklik yok)
-    public CompanyUserRole assignRoleToUserInCompany(Long userId, Long companyId,
-                                                     CompanyRole role, User assignedBy) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        Company company = companyRepository.findById(companyId)
-                .orElseThrow(() -> new RuntimeException("Company not found"));
-
-        Optional<CompanyUserRole> existingRole =
-                companyUserRoleRepository.findByUserAndCompany(user, company);
-
-        if (existingRole.isPresent()) {
-            CompanyUserRole cur = existingRole.get();
-            cur.setRole(role);
-            cur.setAssignedBy(assignedBy);
-            return companyUserRoleRepository.save(cur);
+            return allUsers;
         } else {
-            CompanyUserRole newRole = new CompanyUserRole(user, company, role, assignedBy);
-            return companyUserRoleRepository.save(newRole);
+            // BROKER_USER ve CLIENT_USER sadece kendilerini görebilir
+            return List.of(currentUser);
         }
     }
 
-    public void removeUserFromCompany(Long userId, Long companyId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        Company company = companyRepository.findById(companyId)
-                .orElseThrow(() -> new RuntimeException("Company not found"));
-
-        companyUserRoleRepository.findByUserAndCompany(user, company)
-                .ifPresent(companyUserRoleRepository::delete);
-    }
-
-    public List<Company> getUserAccessibleCompanies(User user) {
-        if (user.isSuperAdmin()) {
-            return companyRepository.findAll();
-        }
-        return companyUserRoleRepository.findCompaniesByUser(user);
-    }
-
-    public List<Company> getUserManageableCompanies(User user) {
-        if (user.isSuperAdmin()) {
-            return companyRepository.findAll();
-        }
-
-        return user.getCompanyRoles().stream()
-                .filter(cur -> cur.getRole() == CompanyRole.COMPANY_ADMIN ||
-                        cur.getRole() == CompanyRole.COMPANY_MANAGER)
-                .map(CompanyUserRole::getCompany)
-                .toList();
-    }
-
-    public boolean canUserAssignRoleInCompany(User user, Long companyId, CompanyRole roleToAssign) {
-        if (user.isSuperAdmin()) return true;
-
-        Company company = companyRepository.findById(companyId).orElse(null);
-        if (company == null) return false;
-
-        CompanyRole userRole = user.getRoleInCompany(company);
-        if (userRole == null) return false;
-
-        return switch (userRole) {
-            case COMPANY_ADMIN -> true;
-            case COMPANY_MANAGER -> roleToAssign == CompanyRole.COMPANY_USER;
-            default -> false;
-        };
-    }
-
-    public boolean canUserManageCompany(User user, Company company) {
-        if (user.isSuperAdmin()) return true;
-        return user.canManageUsersInCompany(company);
-    }
-
-    public boolean canUserViewCompany(User user, Company company) {
-        if (user.isSuperAdmin()) return true;
-        return user.getRoleInCompany(company) != null;
-    }
-
-    public List<User> getCompanyUsers(Long companyId) {
-        return userRepository.findUsersByCompanyId(companyId);
-    }
-
+    /**
+     * Email ile kullanıcı bul
+     */
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
     }
 
+    /**
+     * ID ile kullanıcı bul
+     */
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
     }
 
-    // ✅ YENİ: Kullanıcının başka bir kullanıcıyı düzenleyip düzenleyemeyeceğini kontrol et
+    /**
+     * Username ile kullanıcı bul
+     */
+    public Optional<User> findByUsername(String username) {
+        return userRepository.findByUsername(username);
+    }
+
+    /**
+     * Gümrük firmasının kullanıcıları
+     * (Sadece BROKER_ADMIN ve BROKER_USER)
+     */
+    public List<User> getBrokerUsers(Long brokerCompanyId) {
+        Company broker = companyRepository.findById(brokerCompanyId)
+                .orElseThrow(() -> new RuntimeException("Broker company not found"));
+
+        return userRepository.findByCompanyAndGlobalRoleInAndIsActiveTrue(
+                broker,
+                List.of(GlobalRole.BROKER_ADMIN, GlobalRole.BROKER_USER)
+        );
+    }
+
+    /**
+     * Müşteri firmasının kullanıcısı (tek kullanıcı)
+     */
+    public Optional<User> getClientUser(Long clientCompanyId) {
+        Company client = companyRepository.findById(clientCompanyId)
+                .orElseThrow(() -> new RuntimeException("Client company not found"));
+
+        return userRepository.findByCompanyAndGlobalRoleAndIsActiveTrue(
+                client,
+                GlobalRole.CLIENT_USER
+        );
+    }
+
+    /**
+     * Belirli şirketteki tüm kullanıcılar
+     */
+    public List<User> getCompanyUsers(Long companyId) {
+        Company company = companyRepository.findById(companyId)
+                .orElseThrow(() -> new RuntimeException("Company not found"));
+
+        return userRepository.findByCompanyAndIsActiveTrue(company);
+    }
+
+    // ==========================================
+    // YETKİ KONTROL METODLARI
+    // ==========================================
+
+    /**
+     * Kullanıcı başka bir kullanıcıyı düzenleyebilir mi?
+     * <p>
+     * KURALLAR:
+     * - SUPER_ADMIN: Herkesi düzenleyebilir
+     * - Kullanıcı: Kendisini düzenleyebilir
+     * - BROKER_ADMIN: Kendi broker firmasındaki kullanıcıları düzenleyebilir
+     */
     public boolean canUserEditUser(User currentUser, Long targetUserId) {
         // SUPER_ADMIN herkesi düzenleyebilir
         if (currentUser.isSuperAdmin()) {
@@ -237,55 +324,235 @@ public class UserService implements UserDetailsService {
             return true;
         }
 
-        // Şirket yöneticileri kendi şirketlerindeki kullanıcıları düzenleyebilir
-        Optional<User> targetUser = findById(targetUserId);
-        if (targetUser.isPresent()) {
-            List<Company> manageableCompanies = getUserManageableCompanies(currentUser);
-            List<Company> targetUserCompanies = getUserAccessibleCompanies(targetUser.get());
+        // BROKER_ADMIN kendi firmasındaki kullanıcıları düzenleyebilir
+        if (currentUser.isBrokerAdmin()) {
+            Optional<User> targetUser = findById(targetUserId);
+            if (targetUser.isPresent()) {
+                User target = targetUser.get();
+                Company currentBroker = currentUser.getCompany();
+                Company targetBroker = target.getBrokerCompany();
 
-            // Ortak şirket var mı kontrol et
-            for (Company company : manageableCompanies) {
-                if (targetUserCompanies.contains(company)) {
-                    return true;
-                }
+                return currentBroker != null && targetBroker != null &&
+                        currentBroker.getId().equals(targetBroker.getId());
             }
         }
 
         return false;
     }
 
+    /**
+     * Kullanıcı belirli bir firmayı görebilir mi?
+     */
+    public boolean canUserViewCompany(User user, Company company) {
+        if (user.isSuperAdmin()) return true;
+
+        if (user.isBrokerStaff()) {
+            Company userBroker = user.getBrokerCompany();
+            Company targetBroker = company.getBrokerCompany();
+            return userBroker != null && targetBroker != null &&
+                    userBroker.getId().equals(targetBroker.getId());
+        }
+
+        if (user.isClientUser()) {
+            return user.getCompany() != null &&
+                    user.getCompany().getId().equals(company.getId());
+        }
+
+        return false;
+    }
+
+    /**
+     * Kullanıcının erişebileceği firmalar
+     */
+    public List<Company> getUserAccessibleCompanies(User user) {
+        if (user.isSuperAdmin()) {
+            return companyRepository.findAll();
+        }
+
+        List<Company> companies = new ArrayList<>();
+
+        if (user.getCompany() != null) {
+            companies.add(user.getCompany());
+
+            // BROKER_ADMIN veya BROKER_USER ise, müşteri firmalarını da ekle
+            if (user.isBrokerStaff() && user.getCompany().isBroker()) {
+                companies.addAll(
+                        companyRepository.findByParentBrokerAndIsActiveTrue(user.getCompany())
+                );
+            }
+        }
+
+        return companies;
+    }
+
+    /**
+     * Kullanıcının yönetebileceği firmalar
+     * (Sadece SUPER_ADMIN ve BROKER_ADMIN)
+     */
+    public List<Company> getUserManageableCompanies(User user) {
+        if (user.isSuperAdmin()) {
+            return companyRepository.findAll();
+        }
+
+        if (user.isBrokerAdmin() && user.getCompany() != null) {
+            List<Company> companies = new ArrayList<>();
+            companies.add(user.getCompany());
+
+            if (user.getCompany().isBroker()) {
+                companies.addAll(
+                        companyRepository.findByParentBrokerAndIsActiveTrue(user.getCompany())
+                );
+            }
+
+            return companies;
+        }
+
+        return new ArrayList<>();
+    }
+
+    // ==========================================
+    // USAGE TRACKING GÜNCELLEMELERI
+    // ==========================================
+
+    /**
+     * UsageTracking güncelle - kullanıcı ekleme
+     */
+    private void updateUsageTrackingAfterUserAdd(User user) {
+        if (user.getCompany() == null) return;
+
+        Company brokerCompany = user.getBrokerCompany();
+        if (brokerCompany == null) return;
+
+        usageTrackingRepository.findByBrokerCompanyId(brokerCompany.getId())
+                .ifPresent(tracking -> {
+                    if (user.isBrokerStaff()) {
+                        tracking.incrementBrokerUsers();
+                        usageTrackingRepository.save(tracking);
+                        logger.debug("Usage tracking updated - Broker users incremented for company: {} (Current: {})",
+                                brokerCompany.getId(), tracking.getCurrentBrokerUsers());
+                    }
+                });
+    }
+
+    /**
+     * UsageTracking güncelle - kullanıcı silme
+     */
+    private void updateUsageTrackingAfterUserRemove(User user) {
+        if (user.getCompany() == null) return;
+
+        Company brokerCompany = user.getBrokerCompany();
+        if (brokerCompany == null) return;
+
+        usageTrackingRepository.findByBrokerCompanyId(brokerCompany.getId())
+                .ifPresent(tracking -> {
+                    if (user.isBrokerStaff()) {
+                        tracking.decrementBrokerUsers();
+                        usageTrackingRepository.save(tracking);
+                        logger.debug("Usage tracking updated - Broker users decremented for company: {} (Current: {})",
+                                brokerCompany.getId(), tracking.getCurrentBrokerUsers());
+                    }
+                });
+    }
+
+    // ==========================================
+    // SPRING SECURITY - UserDetailsService
+    // ==========================================
+
+    /**
+     * Spring Security için kullanıcı yükleme
+     */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         Optional<User> user = findByEmail(username);
         if (user.isEmpty()) {
+            logger.warn("User not found with email: {}", username);
             throw new UsernameNotFoundException("User not found: " + username);
         }
 
         User foundUser = user.get();
+
+        if (!foundUser.getIsActive()) {
+            logger.warn("Inactive user attempted login: {}", username);
+            throw new UsernameNotFoundException("User account is disabled: " + username);
+        }
+
         List<GrantedAuthority> authorities = getAuthorities(foundUser);
+
+        logger.debug("User loaded for authentication: {} - Authorities: {}",
+                foundUser.getEmail(), authorities);
 
         return new org.springframework.security.core.userdetails.User(
                 foundUser.getEmail(),
                 foundUser.getPassword(),
                 foundUser.getIsActive(),
-                true, true, true,
+                true, // accountNonExpired
+                true, // credentialsNonExpired
+                true, // accountNonLocked
                 authorities
         );
     }
 
+    /**
+     * Kullanıcının yetkilerini (authorities) oluştur
+     */
     private List<GrantedAuthority> getAuthorities(User user) {
         List<GrantedAuthority> authorities = new ArrayList<>();
 
+        // Global role'ü ekle
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + user.getGlobalRole().name()));
+
+        // SUPER_ADMIN için ek yetki (geriye dönük uyumluluk için)
         if (user.isSuperAdmin()) {
             authorities.add(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"));
         }
-        authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
 
-        user.getCompanyRoles().forEach(cur -> {
-            String authority = "ROLE_" + cur.getRole().name() + "_COMPANY_" + cur.getCompany().getId();
-            authorities.add(new SimpleGrantedAuthority(authority));
-        });
+        // Şirket bazlı roller (opsiyonel, gerekirse kullanılabilir)
+        // Örnek: ROLE_BROKER_ADMIN_COMPANY_1
+        if (user.getCompany() != null) {
+            String companyRole = "ROLE_" + user.getGlobalRole().name() +
+                    "_COMPANY_" + user.getCompany().getId();
+            authorities.add(new SimpleGrantedAuthority(companyRole));
+        }
 
         return authorities;
+    }
+
+    // ==========================================
+    // İSTATİSTİK VE YARDIMCI METODLAR
+    // ==========================================
+
+    /**
+     * Aktif kullanıcı sayısı
+     */
+    public long getActiveUserCount() {
+        return userRepository.countByIsActiveTrue();
+    }
+
+    /**
+     * Belirli role sahip kullanıcı sayısı
+     */
+    public long getUserCountByRole(GlobalRole role) {
+        return userRepository.countByGlobalRole(role);
+    }
+
+    /**
+     * Belirli şirketteki kullanıcı sayısı
+     */
+    public long getCompanyUserCount(Long companyId) {
+        return userRepository.countByCompanyIdAndIsActiveTrue(companyId);
+    }
+
+    /**
+     * Email ile kullanıcı var mı kontrolü
+     */
+    public boolean existsByEmail(String email) {
+        return userRepository.findByEmail(email).isPresent();
+    }
+
+    /**
+     * Username ile kullanıcı var mı kontrolü
+     */
+    public boolean existsByUsername(String username) {
+        return userRepository.findByUsername(username).isPresent();
     }
 }

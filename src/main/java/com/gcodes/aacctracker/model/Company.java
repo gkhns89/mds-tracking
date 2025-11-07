@@ -9,10 +9,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "companies")
+@Table(name = "companies",
+        indexes = {
+                @Index(name = "idx_parent_broker", columnList = "parent_broker_id"),
+                @Index(name = "idx_type_active", columnList = "company_type, is_active")
+        })
 @Getter
 @Setter
 public class Company {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -23,19 +28,14 @@ public class Company {
     @Column(length = 500)
     private String description;
 
-    // ✅ YENİ: Şirket tipi (CUSTOMS_BROKER veya CLIENT)
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, name = "company_type")
     private CompanyType companyType = CompanyType.CLIENT;
 
-    // ✅ YENİ: Eğer CLIENT ise, hangi BROKER ile anlaşmalı?
+    // ✅ CLIENT ise, hangi gümrük firmasına ait?
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_broker_id")
     private Company parentBroker;
-
-    // ✅ YENİ: Broker'ın müşteri listesi
-    @OneToMany(mappedBy = "parentBroker", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<Company> clients = new ArrayList<>();
 
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -43,11 +43,15 @@ public class Company {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-    // ✅ MEVCUT: Firma-kullanıcı rolleri
-    @OneToMany(mappedBy = "company", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<CompanyUserRole> userRoles = new ArrayList<>();
+    // ✅ Broker'ın müşteri listesi
+    @OneToMany(mappedBy = "parentBroker", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Company> clients = new ArrayList<>();
 
-    // ✅ YENİ: Firma ile ilgili işlemler (CustomsTransaction)
+    // ✅ Firmaya ait kullanıcılar
+    @OneToMany(mappedBy = "company", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<User> users = new ArrayList<>();
+
+    // ✅ Firma ile ilgili işlemler
     @OneToMany(mappedBy = "brokerCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<CustomsTransaction> brokerTransactions = new ArrayList<>();
 
@@ -57,7 +61,8 @@ public class Company {
     public Company() {
     }
 
-    // ✅ YENİ: Helper methods
+    // ===== HELPER METODLARI =====
+
     public boolean isBroker() {
         return CompanyType.CUSTOMS_BROKER.equals(companyType);
     }
@@ -66,25 +71,12 @@ public class Company {
         return CompanyType.CLIENT.equals(companyType);
     }
 
-    // ✅ MEVCUT: Yardımcı metodlar
-    public List<User> getUsers() {
-        return userRoles.stream()
-                .map(CompanyUserRole::getUser)
-                .toList();
-    }
-
-    public List<User> getAdmins() {
-        return userRoles.stream()
-                .filter(cur -> CompanyRole.COMPANY_ADMIN.equals(cur.getRole()))
-                .map(CompanyUserRole::getUser)
-                .toList();
-    }
-
-    public List<User> getManagers() {
-        return userRoles.stream()
-                .filter(cur -> CompanyRole.COMPANY_MANAGER.equals(cur.getRole()) ||
-                        CompanyRole.COMPANY_ADMIN.equals(cur.getRole()))
-                .map(CompanyUserRole::getUser)
-                .toList();
+    /**
+     * Gümrük firmasını getir
+     * - BROKER ise kendisi
+     * - CLIENT ise parent broker
+     */
+    public Company getBrokerCompany() {
+        return isBroker() ? this : parentBroker;
     }
 }

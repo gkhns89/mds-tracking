@@ -5,11 +5,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users",
+        indexes = {
+                @Index(name = "idx_company_role", columnList = "company_id, global_role"),
+                @Index(name = "idx_email_active", columnList = "email, is_active")
+        })
 @Getter
 @Setter
 public class User {
@@ -29,51 +31,70 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, name = "global_role")
-    private GlobalRole globalRole = GlobalRole.USER; // ✅ Varsayılan USER
+    private GlobalRole globalRole;
 
-    @Column(name = "created_at")
-    private LocalDateTime createdAt = LocalDateTime.now();
+    // ✅ Kullanıcı hangi firmaya ait? (SUPER_ADMIN için NULL)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id")
+    private Company company;
 
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-    // ✅ Firma bazlı roller - One-to-Many ilişki
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<CompanyUserRole> companyRoles = new ArrayList<>();
+    @Column(name = "email_verified")
+    private Boolean emailVerified = false;
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt = LocalDateTime.now();
 
     public User() {
     }
 
-    // ✅ Yardımcı metodlar
+    // ===== HELPER METODLARI =====
+
     public boolean isSuperAdmin() {
         return GlobalRole.SUPER_ADMIN.equals(this.globalRole);
     }
 
-    // Belirli bir firmadaki rolü getir
-    public CompanyRole getRoleInCompany(Company company) {
-        return companyRoles.stream()
-                .filter(cur -> cur.getCompany().getId().equals(company.getId()))
-                .map(CompanyUserRole::getRole)
-                .findFirst()
-                .orElse(null);
+    public boolean isBrokerAdmin() {
+        return GlobalRole.BROKER_ADMIN.equals(this.globalRole);
     }
 
-    // Kullanıcının erişebileceği firmaları getir
-    public List<Company> getAccessibleCompanies() {
-        return companyRoles.stream()
-                .map(CompanyUserRole::getCompany)
-                .toList();
+    public boolean isBrokerUser() {
+        return GlobalRole.BROKER_USER.equals(this.globalRole);
     }
 
-    // Belirli bir firmada admin mi?
-    public boolean isCompanyAdmin(Company company) {
-        return CompanyRole.COMPANY_ADMIN.equals(getRoleInCompany(company));
+    public boolean isClientUser() {
+        return GlobalRole.CLIENT_USER.equals(this.globalRole);
     }
 
-    // Belirli bir firmada manager veya admin mi?
-    public boolean canManageUsersInCompany(Company company) {
-        CompanyRole role = getRoleInCompany(company);
-        return CompanyRole.COMPANY_ADMIN.equals(role) ||
-                CompanyRole.COMPANY_MANAGER.equals(role);
+    /**
+     * BROKER_ADMIN veya BROKER_USER mı?
+     */
+    public boolean isBrokerStaff() {
+        return isBrokerAdmin() || isBrokerUser();
+    }
+
+    /**
+     * Gümrük firmasını getir
+     * - BROKER ise kendi firması
+     * - CLIENT ise parent broker
+     */
+    public Company getBrokerCompany() {
+        if (company == null) return null;
+
+        if (company.isBroker()) {
+            return company;
+        } else {
+            return company.getParentBroker();
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
     }
 }
