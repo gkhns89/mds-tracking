@@ -3,6 +3,7 @@ package com.gcodes.aacctracker.repository;
 import com.gcodes.aacctracker.model.Company;
 import com.gcodes.aacctracker.model.GlobalRole;
 import com.gcodes.aacctracker.model.User;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +18,29 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
 
     Optional<User> findByUsername(String username);
+
+    // ✅ YENİ: Company ile birlikte getir
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.company WHERE u.email = :email")
+    Optional<User> findByEmailWithCompany(@Param("email") String email);
+
+    @Query("SELECT u FROM User u " +
+            "LEFT JOIN FETCH u.company c " +
+            "LEFT JOIN FETCH c.parentBroker " +
+            "WHERE u.id = :id")
+    Optional<User> findByIdWithCompanyDetails(@Param("id") Long id);
+
+    // ✅ YENİ: Şirket kullanıcılarını tek sorguda getir
+    @Query("SELECT DISTINCT u FROM User u " +
+            "LEFT JOIN FETCH u.company " +
+            "WHERE u.company.id = :companyId AND u.isActive = true")
+    List<User> findByCompanyIdWithDetails(@Param("companyId") Long companyId);
+
+    // ✅ YENİ: EntityGraph kullanarak
+    @EntityGraph(attributePaths = {"company", "company.parentBroker"})
+    List<User> findAllByIsActiveTrue();
+
+    @EntityGraph(attributePaths = {"company"})
+    Optional<User> findWithCompanyById(Long id);
 
     @Query("SELECT u FROM User u WHERE u.email = :identifier OR u.username = :identifier")
     Optional<User> findByEmailOrUsername(@Param("identifier") String identifier);

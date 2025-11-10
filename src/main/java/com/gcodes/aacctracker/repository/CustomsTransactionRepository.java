@@ -3,6 +3,7 @@ package com.gcodes.aacctracker.repository;
 import com.gcodes.aacctracker.model.Company;
 import com.gcodes.aacctracker.model.CustomsTransaction;
 import com.gcodes.aacctracker.model.TransactionStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,39 @@ public interface CustomsTransactionRepository extends JpaRepository<CustomsTrans
 
     // ✅ Dosya numarasına göre işlem bul
     Optional<CustomsTransaction> findByFileNo(String fileNo);
+
+    // ✅ YENİ: İlişkili entity'lerle birlikte getir
+    @Query("SELECT t FROM CustomsTransaction t " +
+            "LEFT JOIN FETCH t.brokerCompany " +
+            "LEFT JOIN FETCH t.clientCompany " +
+            "LEFT JOIN FETCH t.createdByUser " +
+            "WHERE t.id = :id")
+    Optional<CustomsTransaction> findByIdWithDetails(@Param("id") Long id);
+
+    @Query("SELECT t FROM CustomsTransaction t " +
+            "LEFT JOIN FETCH t.brokerCompany " +
+            "LEFT JOIN FETCH t.clientCompany " +
+            "WHERE t.fileNo = :fileNo")
+    Optional<CustomsTransaction> findByFileNoWithDetails(@Param("fileNo") String fileNo);
+
+    // ✅ YENİ: Broker işlemlerini optimize et
+    @Query("SELECT DISTINCT t FROM CustomsTransaction t " +
+            "LEFT JOIN FETCH t.brokerCompany " +
+            "LEFT JOIN FETCH t.clientCompany " +
+            "WHERE t.brokerCompany.id = :brokerId " +
+            "ORDER BY t.createdAt DESC")
+    List<CustomsTransaction> findByBrokerIdWithDetails(@Param("brokerId") Long brokerId);
+
+    @Query("SELECT DISTINCT t FROM CustomsTransaction t " +
+            "LEFT JOIN FETCH t.brokerCompany " +
+            "LEFT JOIN FETCH t.clientCompany " +
+            "WHERE t.clientCompany.id = :clientId " +
+            "ORDER BY t.createdAt DESC")
+    List<CustomsTransaction> findByClientIdWithDetails(@Param("clientId") Long clientId);
+
+    // ✅ YENİ: EntityGraph ile
+    @EntityGraph(attributePaths = {"brokerCompany", "clientCompany", "createdByUser"})
+    List<CustomsTransaction> findTop10ByOrderByCreatedAtDesc();
 
     // ✅ Belirli gümrük firmasının tüm işlemleri
     List<CustomsTransaction> findByBrokerCompany(Company brokerCompany);

@@ -19,13 +19,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Isolation;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Service
-@Transactional
+@Transactional(readOnly = true)
 public class UserService implements UserDetailsService {
 
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
@@ -59,150 +61,291 @@ public class UserService implements UserDetailsService {
      * - CLIENT_USER ise, müşteri firması başına sadece 1 kullanıcı olabilir
      * - UsageTracking otomatik güncellenir
      */
+    // ✅ Write işlemi - Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            isolation = Isolation.READ_COMMITTED,
+            rollbackFor = Exception.class
+    )
     public User createUser(User user) {
-        // Email uniqueness kontrolü
-        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
-            throw new RuntimeException("Email already exists: " + user.getEmail());
-        }
+        logger.info("Creating user: {}", user.getEmail());
 
-        // Username uniqueness kontrolü
-        if (userRepository.findByUsername(user.getUsername()).isPresent()) {
-            throw new RuntimeException("Username already exists: " + user.getUsername());
-        }
-
-        // ✅ BROKER_ADMIN veya BROKER_USER ise limit kontrolü
-        if (user.isBrokerStaff() && user.getCompany() != null && user.getIsActive()) {
-            Company company = user.getCompany();
-            Company brokerCompany = company.getBrokerCompany();
-
-            if (brokerCompany == null) {
-                throw new RuntimeException("Cannot determine broker company for user");
+        try {
+            // Email uniqueness kontrolü
+            if (userRepository.findByEmail(user.getEmail()).isPresent()) {
+                throw new RuntimeException("Email already exists: " + user.getEmail());
             }
 
-            // Limit kontrolü yap
-            if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
-                int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
-                throw new LimitExceededException(
-                        "User limit exceeded. Remaining quota: " + remaining
-                );
+            // Username uniqueness kontrolü
+            if (userRepository.findByUsername(user.getUsername()).isPresent()) {
+                throw new RuntimeException("Username already exists: " + user.getUsername());
             }
-        }
 
-        // ✅ CLIENT_USER ise, müşteri firmasına zaten kullanıcı var mı kontrol et
-        if (user.isClientUser() && user.getCompany() != null) {
-            Company clientCompany = user.getCompany();
+            // ✅ BROKER_ADMIN veya BROKER_USER ise limit kontrolü
+            if (user.isBrokerStaff() && user.getCompany() != null && user.getIsActive()) {
+                Company company = user.getCompany();
+                Company brokerCompany = company.getBrokerCompany();
 
-            // Bu müşteri firmasına ait başka aktif kullanıcı var mı?
-            long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
-            if (existingUsers > 0) {
-                throw new RuntimeException(
-                        "This client company already has a user. Only one user per client company is allowed."
-                );
+                if (brokerCompany == null) {
+                    throw new RuntimeException("Cannot determine broker company for user");
+                }
+
+                // Limit kontrolü yap
+                if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                    int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
+                    throw new LimitExceededException(
+                            "User limit exceeded. Remaining quota: " + remaining
+                    );
+                }
             }
+
+            // ✅ CLIENT_USER ise, müşteri firmasına zaten kullanıcı var mı kontrol et
+            if (user.isClientUser() && user.getCompany() != null) {
+                Company clientCompany = user.getCompany();
+
+                long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
+                if (existingUsers > 0) {
+                    throw new RuntimeException(
+                            "This client company already has a user. Only one user per client company is allowed."
+                    );
+                }
+            }
+
+            // ✅ Kullanıcıyı kaydet
+            User savedUser = userRepository.save(user);
+
+            // ✅ UsageTracking'i güncelle (aynı transaction içinde)
+            if (savedUser.isBrokerStaff() && savedUser.getCompany() != null) {
+                updateUsageTrackingAfterUserAdd(savedUser);
+            }
+
+            logger.info("User created successfully: {} - Role: {}",
+                    savedUser.getEmail(), savedUser.getGlobalRole());
+
+            return savedUser;
+
+        } catch (LimitExceededException e) {
+            logger.warn("User creation failed - Limit exceeded: {}", e.getMessage());
+            throw e; // Re-throw to rollback transaction
+        } catch (Exception e) {
+            logger.error("User creation failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to create user: " + e.getMessage(), e);
         }
-
-        User savedUser = userRepository.save(user);
-
-        // ✅ UsageTracking'i güncelle
-        if (savedUser.isBrokerStaff() && savedUser.getCompany() != null) {
-            updateUsageTrackingAfterUserAdd(savedUser);
-        }
-
-        logger.info("User created: {} - Role: {} - Company: {}",
-                savedUser.getEmail(),
-                savedUser.getGlobalRole(),
-                savedUser.getCompany() != null ? savedUser.getCompany().getName() : "N/A");
-
-        return savedUser;
     }
 
-    /**
-     * Kullanıcı güncelle
-     * <p>
-     * GÜNCELLENEBİLİR ALANLAR:
-     * - Email (uniqueness kontrolü ile)
-     * - Username (uniqueness kontrolü ile)
-     * - Password (encode edilerek)
-     * - IsActive (sadece SUPER_ADMIN veya BROKER_ADMIN)
-     */
+    // ✅ Write işlemi - Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            rollbackFor = Exception.class
+    )
     public User updateUser(Long userId, UserUpdateRequest request, User updatingUser) {
+        logger.info("Updating user: {}", userId);
+
         User userToUpdate = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        // Email güncellenecekse uniqueness kontrol et
-        if (StringUtils.hasText(request.getEmail()) &&
-                !request.getEmail().equals(userToUpdate.getEmail())) {
-            Optional<User> existingUser = userRepository.findByEmail(request.getEmail());
-            if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
-                throw new RuntimeException("Email already exists: " + request.getEmail());
-            }
-            userToUpdate.setEmail(request.getEmail());
-        }
-
-        // Username güncellenecekse uniqueness kontrol et
-        if (StringUtils.hasText(request.getUsername()) &&
-                !request.getUsername().equals(userToUpdate.getUsername())) {
-            Optional<User> existingUser = userRepository.findByUsername(request.getUsername());
-            if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
-                throw new RuntimeException("Username already exists: " + request.getUsername());
-            }
-            userToUpdate.setUsername(request.getUsername());
-        }
-
-        // Şifre güncellenecekse encode et
-        if (StringUtils.hasText(request.getPassword())) {
-            userToUpdate.setPassword(passwordEncoder.encode(request.getPassword()));
-            logger.info("Password updated for user: {}", userToUpdate.getEmail());
-        }
-
-        // Aktiflik durumu - sadece SUPER_ADMIN veya BROKER_ADMIN değiştirebilir
-        if (request.getIsActive() != null) {
-            if (!updatingUser.isSuperAdmin() && !updatingUser.isBrokerAdmin()) {
-                throw new RuntimeException("Only SUPER_ADMIN or BROKER_ADMIN can change user active status");
+        try {
+            // Email güncellenecekse uniqueness kontrol et
+            if (StringUtils.hasText(request.getEmail()) &&
+                    !request.getEmail().equals(userToUpdate.getEmail())) {
+                Optional<User> existingUser = userRepository.findByEmail(request.getEmail());
+                if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
+                    throw new RuntimeException("Email already exists: " + request.getEmail());
+                }
+                userToUpdate.setEmail(request.getEmail());
             }
 
-            // Kullanıcı devre dışı bırakılıyorsa, UsageTracking'i güncelle
-            if (!request.getIsActive() && userToUpdate.getIsActive()) {
-                userToUpdate.setIsActive(false);
-                updateUsageTrackingAfterUserRemove(userToUpdate);
-                logger.info("User deactivated: {}", userToUpdate.getEmail());
+            // Username güncellenecekse uniqueness kontrol et
+            if (StringUtils.hasText(request.getUsername()) &&
+                    !request.getUsername().equals(userToUpdate.getUsername())) {
+                Optional<User> existingUser = userRepository.findByUsername(request.getUsername());
+                if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
+                    throw new RuntimeException("Username already exists: " + request.getUsername());
+                }
+                userToUpdate.setUsername(request.getUsername());
             }
-            // Kullanıcı aktifleştiriliyorsa, UsageTracking'i güncelle
-            else if (request.getIsActive() && !userToUpdate.getIsActive()) {
-                // Aktifleştirmeden önce limit kontrolü yap
-                if (userToUpdate.isBrokerStaff() && userToUpdate.getCompany() != null) {
-                    Company brokerCompany = userToUpdate.getBrokerCompany();
-                    if (brokerCompany != null && !limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
-                        throw new LimitExceededException("Cannot reactivate user: User limit exceeded");
-                    }
+
+            // Şifre güncellenecekse encode et
+            if (StringUtils.hasText(request.getPassword())) {
+                userToUpdate.setPassword(passwordEncoder.encode(request.getPassword()));
+                logger.info("Password updated for user: {}", userToUpdate.getEmail());
+            }
+
+            // Aktiflik durumu - sadece SUPER_ADMIN veya BROKER_ADMIN değiştirebilir
+            if (request.getIsActive() != null) {
+                if (!updatingUser.isSuperAdmin() && !updatingUser.isBrokerAdmin()) {
+                    throw new RuntimeException("Only SUPER_ADMIN or BROKER_ADMIN can change user active status");
                 }
 
-                userToUpdate.setIsActive(true);
-                updateUsageTrackingAfterUserAdd(userToUpdate);
-                logger.info("User activated: {}", userToUpdate.getEmail());
-            }
-        }
+                boolean wasActive = userToUpdate.getIsActive();
+                boolean willBeActive = request.getIsActive();
 
-        return userRepository.save(userToUpdate);
+                // Kullanıcı devre dışı bırakılıyorsa
+                if (wasActive && !willBeActive) {
+                    userToUpdate.setIsActive(false);
+                    updateUsageTrackingAfterUserRemove(userToUpdate);
+                    logger.info("User deactivated: {}", userToUpdate.getEmail());
+                }
+                // Kullanıcı aktifleştiriliyorsa
+                else if (!wasActive && willBeActive) {
+                    // Aktifleştirmeden önce limit kontrolü yap
+                    if (userToUpdate.isBrokerStaff() && userToUpdate.getCompany() != null) {
+                        Company brokerCompany = userToUpdate.getBrokerCompany();
+                        if (brokerCompany != null && !limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                            throw new LimitExceededException("Cannot reactivate user: User limit exceeded");
+                        }
+                    }
+
+                    userToUpdate.setIsActive(true);
+                    updateUsageTrackingAfterUserAdd(userToUpdate);
+                    logger.info("User activated: {}", userToUpdate.getEmail());
+                }
+            }
+
+            User updated = userRepository.save(userToUpdate);
+            logger.info("User updated successfully: {}", updated.getEmail());
+
+            return updated;
+
+        } catch (LimitExceededException e) {
+            logger.warn("User update failed - Limit exceeded: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            logger.error("User update failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to update user: " + e.getMessage(), e);
+        }
     }
 
-    /**
-     * Kullanıcı silme (soft delete)
-     * <p>
-     * NOT: Kullanıcı tamamen silinmez, sadece devre dışı bırakılır (is_active = false)
-     */
+    // ✅ Write işlemi - Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            rollbackFor = Exception.class
+    )
     public void deleteUser(Long userId) {
+        logger.info("Deleting user: {}", userId);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
-        // Soft delete
-        user.setIsActive(false);
-        userRepository.save(user);
+        try {
+            // Soft delete
+            user.setIsActive(false);
+            userRepository.save(user);
 
-        // UsageTracking'i güncelle
-        updateUsageTrackingAfterUserRemove(user);
+            // UsageTracking'i güncelle (aynı transaction içinde)
+            updateUsageTrackingAfterUserRemove(user);
 
-        logger.info("User soft deleted: {} (ID: {})", user.getEmail(), userId);
+            logger.info("User soft deleted successfully: {} (ID: {})", user.getEmail(), userId);
+
+        } catch (Exception e) {
+            logger.error("User deletion failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to delete user: " + e.getMessage(), e);
+        }
+    }
+
+    // ✅ Write işlemi - Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            rollbackFor = Exception.class
+    )
+    public User activateUser(Long userId, User approvingUser) {
+        logger.info("Activating user: {} by {}", userId, approvingUser.getEmail());
+
+        User userToActivate = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        try {
+            // Zaten aktif mi?
+            if (userToActivate.getIsActive()) {
+                throw new RuntimeException("User is already active");
+            }
+
+            // Yetki kontrolü
+            if (!canUserApproveUser(approvingUser, userToActivate)) {
+                throw new RuntimeException("You don't have permission to approve this user");
+            }
+
+            // CLIENT_USER için müşteri firmasında başka aktif kullanıcı var mı kontrol et
+            if (userToActivate.isClientUser() && userToActivate.getCompany() != null) {
+                Company clientCompany = userToActivate.getCompany();
+                long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
+
+                if (existingUsers > 0) {
+                    throw new RuntimeException(
+                            "This client company already has an active user. " +
+                                    "Only one user per client company is allowed."
+                    );
+                }
+            }
+
+            // BROKER_USER için limit kontrolü
+            if (userToActivate.isBrokerUser() && userToActivate.getCompany() != null) {
+                Company brokerCompany = userToActivate.getCompany();
+
+                if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                    int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
+                    throw new LimitExceededException(
+                            "User limit exceeded. Remaining quota: " + remaining
+                    );
+                }
+            }
+
+            // Kullanıcıyı aktifleştir
+            userToActivate.setIsActive(true);
+            User activated = userRepository.save(userToActivate);
+
+            // UsageTracking güncelle (aynı transaction içinde)
+            if (activated.isBrokerStaff()) {
+                updateUsageTrackingAfterUserAdd(activated);
+            }
+
+            logger.info("User activated successfully: {} by {}",
+                    activated.getEmail(), approvingUser.getEmail());
+
+            return activated;
+
+        } catch (LimitExceededException e) {
+            logger.warn("User activation failed - Limit exceeded: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            logger.error("User activation failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to activate user: " + e.getMessage(), e);
+        }
+    }
+
+    // ✅ Write işlemi - Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            rollbackFor = Exception.class
+    )
+    public void rejectUser(Long userId, String reason, User rejectingUser) {
+        logger.info("Rejecting user: {} by {} - Reason: {}",
+                userId, rejectingUser.getEmail(), reason);
+
+        User userToReject = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        try {
+            // Sadece pasif kullanıcılar reddedilebilir
+            if (userToReject.getIsActive()) {
+                throw new RuntimeException("Can only reject inactive users");
+            }
+
+            // Yetki kontrolü
+            if (!canUserApproveUser(rejectingUser, userToReject)) {
+                throw new RuntimeException("You don't have permission to reject this user");
+            }
+
+            // Kullanıcıyı sil (hard delete - henüz sisteme girmedi)
+            userRepository.delete(userToReject);
+
+            logger.info("User rejected and deleted successfully: {} by {}",
+                    userToReject.getEmail(), rejectingUser.getEmail());
+
+        } catch (Exception e) {
+            logger.error("User rejection failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to reject user: " + e.getMessage(), e);
+        }
     }
 
     // ==========================================
@@ -247,14 +390,14 @@ public class UserService implements UserDetailsService {
      * Email ile kullanıcı bul
      */
     public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+        return userRepository.findByEmailWithCompany(email); // ✅ Optimized
     }
 
     /**
      * ID ile kullanıcı bul
      */
     public Optional<User> findById(Long id) {
-        return userRepository.findById(id);
+        return userRepository.findByIdWithCompanyDetails(id); // ✅ Optimized
     }
 
     /**
@@ -428,8 +571,8 @@ public class UserService implements UserDetailsService {
                     if (user.isBrokerStaff()) {
                         tracking.incrementBrokerUsers();
                         usageTrackingRepository.save(tracking);
-                        logger.debug("Usage tracking updated - Broker users incremented for company: {} (Current: {})",
-                                brokerCompany.getId(), tracking.getCurrentBrokerUsers());
+                        logger.debug("Usage tracking updated - Users incremented for company: {}",
+                                brokerCompany.getId());
                     }
                 });
     }
@@ -448,8 +591,8 @@ public class UserService implements UserDetailsService {
                     if (user.isBrokerStaff()) {
                         tracking.decrementBrokerUsers();
                         usageTrackingRepository.save(tracking);
-                        logger.debug("Usage tracking updated - Broker users decremented for company: {} (Current: {})",
-                                brokerCompany.getId(), tracking.getCurrentBrokerUsers());
+                        logger.debug("Usage tracking updated - Users decremented for company: {}",
+                                brokerCompany.getId());
                     }
                 });
     }
@@ -463,7 +606,8 @@ public class UserService implements UserDetailsService {
      */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        Optional<User> user = findByEmail(username);
+        Optional<User> user = userRepository.findByEmailWithCompany(username); // ✅ Optimized
+
         if (user.isEmpty()) {
             logger.warn("User not found with email: {}", username);
             throw new UsernameNotFoundException("User not found: " + username);
@@ -485,9 +629,9 @@ public class UserService implements UserDetailsService {
                 foundUser.getEmail(),
                 foundUser.getPassword(),
                 foundUser.getIsActive(),
-                true, // accountNonExpired
-                true, // credentialsNonExpired
-                true, // accountNonLocked
+                true,
+                true,
+                true,
                 authorities
         );
     }
@@ -497,17 +641,12 @@ public class UserService implements UserDetailsService {
      */
     private List<GrantedAuthority> getAuthorities(User user) {
         List<GrantedAuthority> authorities = new ArrayList<>();
-
-        // Global role'ü ekle
         authorities.add(new SimpleGrantedAuthority("ROLE_" + user.getGlobalRole().name()));
 
-        // SUPER_ADMIN için ek yetki (geriye dönük uyumluluk için)
         if (user.isSuperAdmin()) {
             authorities.add(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"));
         }
 
-        // Şirket bazlı roller (opsiyonel, gerekirse kullanılabilir)
-        // Örnek: ROLE_BROKER_ADMIN_COMPANY_1
         if (user.getCompany() != null) {
             String companyRole = "ROLE_" + user.getGlobalRole().name() +
                     "_COMPANY_" + user.getCompany().getId();
@@ -597,97 +736,6 @@ public class UserService implements UserDetailsService {
 
         // Diğerleri pasif kullanıcıları göremez
         return List.of();
-    }
-
-    /**
-     * Kullanıcıyı aktifleştir (onayla)
-     * <p>
-     * KURALLAR:
-     * - SUPER_ADMIN: Tüm kullanıcıları aktifleştirebilir
-     * - BROKER_ADMIN: Kendi müşteri firmalarındaki kullanıcıları aktifleştirebilir
-     * - Aktifleştirme sırasında limit kontrolü yapılır
-     */
-    public User activateUser(Long userId, User approvingUser) {
-        User userToActivate = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Zaten aktif mi?
-        if (userToActivate.getIsActive()) {
-            throw new RuntimeException("User is already active");
-        }
-
-        // Yetki kontrolü
-        if (!canUserApproveUser(approvingUser, userToActivate)) {
-            throw new RuntimeException("You don't have permission to approve this user");
-        }
-
-        // ✅ CLIENT_USER için müşteri firmasında başka aktif kullanıcı var mı kontrol et
-        if (userToActivate.isClientUser() && userToActivate.getCompany() != null) {
-            Company clientCompany = userToActivate.getCompany();
-            long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
-
-            if (existingUsers > 0) {
-                throw new RuntimeException(
-                        "This client company already has an active user. " +
-                                "Only one user per client company is allowed."
-                );
-            }
-        }
-
-        // ✅ BROKER_USER için limit kontrolü
-        if (userToActivate.isBrokerUser() && userToActivate.getCompany() != null) {
-            Company brokerCompany = userToActivate.getCompany();
-
-            if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
-                int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
-                throw new LimitExceededException(
-                        "User limit exceeded. Remaining quota: " + remaining
-                );
-            }
-        }
-
-        // Kullanıcıyı aktifleştir
-        userToActivate.setIsActive(true);
-        User activated = userRepository.save(userToActivate);
-
-        // UsageTracking güncelle
-        if (activated.isBrokerStaff()) {
-            updateUsageTrackingAfterUserAdd(activated);
-        }
-
-        logger.info("User activated: {} by {}",
-                activated.getEmail(), approvingUser.getEmail());
-
-        return activated;
-    }
-
-    /**
-     * Kullanıcıyı reddet (sil)
-     * <p>
-     * KURALLAR:
-     * - SUPER_ADMIN: Tüm kullanıcıları reddedebilir
-     * - BROKER_ADMIN: Kendi müşteri firmalarındaki kullanıcıları reddedebilir
-     * - Pasif kullanıcı tamamen silinir (hard delete)
-     */
-    public void rejectUser(Long userId, String reason, User rejectingUser) {
-        User userToReject = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Sadece pasif kullanıcılar reddedilebilir
-        if (userToReject.getIsActive()) {
-            throw new RuntimeException("Can only reject inactive users");
-        }
-
-        // Yetki kontrolü
-        if (!canUserApproveUser(rejectingUser, userToReject)) {
-            throw new RuntimeException("You don't have permission to reject this user");
-        }
-
-        // Kullanıcıyı sil (hard delete - henüz sisteme girmedi)
-        userRepository.delete(userToReject);
-
-        logger.info("User rejected and deleted: {} by {} - Reason: {}",
-                userToReject.getEmail(), rejectingUser.getEmail(), reason);
     }
 
     /**
