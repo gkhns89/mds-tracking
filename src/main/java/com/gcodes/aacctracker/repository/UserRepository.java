@@ -29,6 +29,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findFirstByGlobalRole(GlobalRole globalRole);
 
+    // Pasif kullanıcıları getir
+    List<User> findByIsActiveFalse();
+
+    // Belirli şirketteki pasif kullanıcılar
+    List<User> findByCompanyAndIsActiveFalse(Company company);
+
     // ===== AKTİFLİK SORGU LARI =====
 
     List<User> findByIsActiveTrue();

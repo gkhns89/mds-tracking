@@ -15,4 +15,5 @@ public class ContextualAuthResponse {
     private Map<String, Object> user;
     private List<Map<String, Object>> availableBrokers; // Erişebildiği tüm broker'lar
     private Map<String, Object> selectedBroker; // Seçili broker (varsa)
+    private Boolean status;
 }

@@ -499,4 +499,94 @@ public class UserController {
 
         return response;
     }
+    // ==========================================
+// PASİF KULLANICI YÖNETİMİ
+// ==========================================
+
+    /**
+     * Bekleyen (pasif) kullanıcıları listele
+     */
+    @GetMapping("/pending")
+    public ResponseEntity<?> getPendingUsers() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // Sadece SUPER_ADMIN ve BROKER_ADMIN görebilir
+            if (!currentUser.isSuperAdmin() && !currentUser.isBrokerAdmin()) {
+                return ResponseEntity.status(403)
+                        .body(Map.of("error", "❌ Only admins can view pending users"));
+            }
+
+            List<User> pendingUsers = userService.getPendingUsers(currentUser);
+
+            return ResponseEntity.ok(Map.of(
+                    "total", pendingUsers.size(),
+                    "pendingUsers", pendingUsers.stream().map(this::mapUserToResponse).toList()
+            ));
+
+        } catch (Exception e) {
+            logger.error("Error getting pending users", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "❌ Error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Kullanıcıyı aktifleştir (onayla)
+     */
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<?> activateUser(@PathVariable Long id) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            User activated = userService.activateUser(id, currentUser);
+
+            logger.info("User activated: {} by {}", activated.getEmail(), currentUser.getEmail());
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "✅ User activated successfully",
+                    "user", mapUserToResponse(activated)
+            ));
+
+        } catch (LimitExceededException e) {
+            logger.warn("Limit exceeded while activating user: {}", e.getMessage());
+            return ResponseEntity.status(429)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error activating user", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "❌ Error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Kullanıcıyı reddet (sil)
+     */
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<?> rejectUser(
+            @PathVariable Long id,
+            @RequestParam(required = false) String reason) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            User currentUser = userService.findByEmail(auth.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            userService.rejectUser(id, reason, currentUser);
+
+            logger.info("User rejected: {} by {}", id, currentUser.getEmail());
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "✅ User rejected and removed successfully"
+            ));
+
+        } catch (Exception e) {
+            logger.error("Error rejecting user", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "❌ Error: " + e.getMessage()));
+        }
+    }
 }

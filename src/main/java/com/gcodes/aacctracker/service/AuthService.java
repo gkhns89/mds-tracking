@@ -108,7 +108,7 @@ public class AuthService {
         clientUser.setPassword(passwordEncoder.encode(request.getPassword()));
         clientUser.setGlobalRole(GlobalRole.CLIENT_USER);
         clientUser.setCompany(savedClient);
-        clientUser.setIsActive(true);
+        clientUser.setIsActive(false);
         clientUser.setEmailVerified(false);
         User savedUser = userRepository.save(clientUser);
 
@@ -133,9 +133,16 @@ public class AuthService {
                 "code", brokerCompany.getCompanyCode()
         );
 
-        logger.info("Client registered: {} for broker: {}", savedUser.getEmail(), brokerCompany.getName());
+        logger.info("Client registered (PENDING APPROVAL): {} for broker: {}",
+                savedUser.getEmail(), brokerCompany.getName());
 
-        return new ContextualAuthResponse(token, userMap, List.of(brokerMap), brokerMap);
+        return new ContextualAuthResponse(
+                token,
+                userMap,
+                List.of(brokerMap),
+                brokerMap,
+                false // ⚠️ Henüz aktif değil - onay bekliyor
+        );
     }
 
     // ✅ Giriş - Basit (eski)
@@ -148,7 +155,7 @@ public class AuthService {
         }
 
         if (!user.getIsActive()) {
-            throw new RuntimeException("User account is disabled");
+            throw new RuntimeException("PENDING_APPROVAL");
         }
 
         String token = jwtTokenProvider.generateToken(user.getEmail());
@@ -189,6 +196,7 @@ public class AuthService {
         userMap.put("email", user.getEmail());
         userMap.put("username", user.getUsername());
         userMap.put("globalRole", user.getGlobalRole());
+        userMap.put("isActive", user.getIsActive());  // ✅ Eklenen alan
 
         if (user.getCompany() != null) {
             Map<String, Object> companyMap = new HashMap<>();
@@ -204,7 +212,13 @@ public class AuthService {
                 user.getEmail(),
                 selectedBroker != null ? selectedBroker.get("code") : "N/A");
 
-        return new ContextualAuthResponse(token, userMap, availableBrokers, selectedBroker);
+        return new ContextualAuthResponse(
+                token,
+                userMap,
+                availableBrokers,
+                selectedBroker,
+                true  // ✅ status = true (Aktif kullanıcı)
+        );
     }
 
     // ✅ Kullanıcının erişebildiği broker'ları getir

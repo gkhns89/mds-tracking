@@ -71,7 +71,7 @@ public class UserService implements UserDetailsService {
         }
 
         // ✅ BROKER_ADMIN veya BROKER_USER ise limit kontrolü
-        if (user.isBrokerStaff() && user.getCompany() != null) {
+        if (user.isBrokerStaff() && user.getCompany() != null && user.getIsActive()) {
             Company company = user.getCompany();
             Company brokerCompany = company.getBrokerCompany();
 
@@ -554,5 +554,161 @@ public class UserService implements UserDetailsService {
      */
     public boolean existsByUsername(String username) {
         return userRepository.findByUsername(username).isPresent();
+    }
+    // ==========================================
+// PASİF KULLANICI YÖNETİMİ
+// ==========================================
+
+    /**
+     * Bekleyen (pasif) kullanıcıları getir
+     * <p>
+     * KURALLAR:
+     * - SUPER_ADMIN: Tüm pasif kullanıcıları görebilir
+     * - BROKER_ADMIN: Kendi broker firmasının müşterilerindeki pasif kullanıcıları görebilir
+     */
+    public List<User> getPendingUsers(User requestingUser) {
+        if (requestingUser.isSuperAdmin()) {
+            // SUPER_ADMIN tüm pasif kullanıcıları görebilir
+            return userRepository.findByIsActiveFalse();
+        }
+
+        if (requestingUser.isBrokerAdmin()) {
+            // BROKER_ADMIN kendi müşteri firmalarındaki pasif kullanıcıları görebilir
+            Company brokerCompany = requestingUser.getCompany();
+
+            List<User> pendingUsers = new ArrayList<>();
+
+            // Müşteri firmalarını bul
+            List<Company> clientCompanies = companyRepository
+                    .findByParentBrokerAndIsActiveTrue(brokerCompany);
+
+            // Her müşteri firmasının pasif kullanıcılarını ekle
+            for (Company client : clientCompanies) {
+                List<User> clientPendingUsers = userRepository
+                        .findByCompanyAndIsActiveFalse(client);
+                pendingUsers.addAll(clientPendingUsers);
+            }
+
+            logger.info("Found {} pending users for broker: {}",
+                    pendingUsers.size(), brokerCompany.getName());
+
+            return pendingUsers;
+        }
+
+        // Diğerleri pasif kullanıcıları göremez
+        return List.of();
+    }
+
+    /**
+     * Kullanıcıyı aktifleştir (onayla)
+     * <p>
+     * KURALLAR:
+     * - SUPER_ADMIN: Tüm kullanıcıları aktifleştirebilir
+     * - BROKER_ADMIN: Kendi müşteri firmalarındaki kullanıcıları aktifleştirebilir
+     * - Aktifleştirme sırasında limit kontrolü yapılır
+     */
+    public User activateUser(Long userId, User approvingUser) {
+        User userToActivate = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Zaten aktif mi?
+        if (userToActivate.getIsActive()) {
+            throw new RuntimeException("User is already active");
+        }
+
+        // Yetki kontrolü
+        if (!canUserApproveUser(approvingUser, userToActivate)) {
+            throw new RuntimeException("You don't have permission to approve this user");
+        }
+
+        // ✅ CLIENT_USER için müşteri firmasında başka aktif kullanıcı var mı kontrol et
+        if (userToActivate.isClientUser() && userToActivate.getCompany() != null) {
+            Company clientCompany = userToActivate.getCompany();
+            long existingUsers = userRepository.countByCompanyIdAndIsActiveTrue(clientCompany.getId());
+
+            if (existingUsers > 0) {
+                throw new RuntimeException(
+                        "This client company already has an active user. " +
+                                "Only one user per client company is allowed."
+                );
+            }
+        }
+
+        // ✅ BROKER_USER için limit kontrolü
+        if (userToActivate.isBrokerUser() && userToActivate.getCompany() != null) {
+            Company brokerCompany = userToActivate.getCompany();
+
+            if (!limitCheckService.canAddBrokerUser(brokerCompany.getId())) {
+                int remaining = limitCheckService.getRemainingUserQuota(brokerCompany.getId());
+                throw new LimitExceededException(
+                        "User limit exceeded. Remaining quota: " + remaining
+                );
+            }
+        }
+
+        // Kullanıcıyı aktifleştir
+        userToActivate.setIsActive(true);
+        User activated = userRepository.save(userToActivate);
+
+        // UsageTracking güncelle
+        if (activated.isBrokerStaff()) {
+            updateUsageTrackingAfterUserAdd(activated);
+        }
+
+        logger.info("User activated: {} by {}",
+                activated.getEmail(), approvingUser.getEmail());
+
+        return activated;
+    }
+
+    /**
+     * Kullanıcıyı reddet (sil)
+     * <p>
+     * KURALLAR:
+     * - SUPER_ADMIN: Tüm kullanıcıları reddedebilir
+     * - BROKER_ADMIN: Kendi müşteri firmalarındaki kullanıcıları reddedebilir
+     * - Pasif kullanıcı tamamen silinir (hard delete)
+     */
+    public void rejectUser(Long userId, String reason, User rejectingUser) {
+        User userToReject = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Sadece pasif kullanıcılar reddedilebilir
+        if (userToReject.getIsActive()) {
+            throw new RuntimeException("Can only reject inactive users");
+        }
+
+        // Yetki kontrolü
+        if (!canUserApproveUser(rejectingUser, userToReject)) {
+            throw new RuntimeException("You don't have permission to reject this user");
+        }
+
+        // Kullanıcıyı sil (hard delete - henüz sisteme girmedi)
+        userRepository.delete(userToReject);
+
+        logger.info("User rejected and deleted: {} by {} - Reason: {}",
+                userToReject.getEmail(), rejectingUser.getEmail(), reason);
+    }
+
+    /**
+     * Kullanıcı başka bir kullanıcıyı onaylayabilir mi?
+     */
+    private boolean canUserApproveUser(User approver, User target) {
+        // SUPER_ADMIN herkesi onaylayabilir
+        if (approver.isSuperAdmin()) {
+            return true;
+        }
+
+        // BROKER_ADMIN kendi müşteri firmalarındaki kullanıcıları onaylayabilir
+        if (approver.isBrokerAdmin() && target.isClientUser()) {
+            Company approverBroker = approver.getCompany();
+            Company targetClient = target.getCompany();
+
+            if (targetClient != null && targetClient.getParentBroker() != null) {
+                return approverBroker.getId().equals(targetClient.getParentBroker().getId());
+            }
+        }
+
+        return false;
     }
 }

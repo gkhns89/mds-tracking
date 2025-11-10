@@ -80,6 +80,16 @@ public class AuthController {
             User user = userService.findByEmail(request.getEmail())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
+            // ⚠️ Kullanıcı aktif mi kontrol et
+            if (!user.getIsActive()) {
+                return ResponseEntity.status(403)
+                        .body(Map.of(
+                                "error", "⏳ Your account is pending approval",
+                                "message", "Please wait for your broker admin to activate your account",
+                                "isActive", false
+                        ));
+            }
+
             logger.info("User logged in: {} - Role: {}", request.getEmail(), user.getGlobalRole());
 
             Map<String, Object> userMap = new HashMap<>();
@@ -129,10 +139,22 @@ public class AuthController {
                     "token", response.getToken(),
                     "user", response.getUser(),
                     "availableBrokers", response.getAvailableBrokers(),
-                    "selectedBroker", response.getSelectedBroker()
+                    "selectedBroker", response.getSelectedBroker(),
+                    "status", response.getStatus()  // ✅ Eklendi
             ));
         } catch (Exception e) {
             logger.error("Login with context error for user: {}", request.getEmail(), e);
+
+            // ⚠️ Pasif kullanıcı özel durumu
+            if ("PENDING_APPROVAL".equals(e.getMessage())) {
+                return ResponseEntity.status(403).body(Map.of(
+                        "error", "⏳ Account Pending Approval",
+                        "message", "Your account is waiting for broker admin approval. Please contact your broker.",
+                        "code", "PENDING_APPROVAL",
+                        "status", false
+                ));
+            }
+
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "❌ Invalid credentials"));
         }
