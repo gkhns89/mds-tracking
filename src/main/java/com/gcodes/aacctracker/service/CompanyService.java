@@ -62,7 +62,10 @@ public class CompanyService {
         tracking.setBrokerCompany(savedCompany);
         usageTrackingRepository.save(tracking);
 
-        logger.info("Broker company created: {} by {}", savedCompany.getName(), createdBy.getEmail());
+        // ✅ YENİ: Firma kodunu oluştur
+        generateCompanyCodeIfNeeded(savedCompany);
+
+        logger.info("Broker company created: Company ID: {} | {} by {}", savedCompany.getCompanyCode(), savedCompany.getName(), createdBy.getEmail());
 
         return savedCompany;
     }
@@ -254,5 +257,17 @@ public class CompanyService {
                     tracking.decrementClientCompanies();
                     usageTrackingRepository.save(tracking);
                 });
+    }
+
+    /**
+     * Broker firması oluşturulduktan sonra otomatik kod oluştur
+     */
+    private void generateCompanyCodeIfNeeded(Company company) {
+        if (company.isBroker() && company.getCompanyCode() == null) {
+            company.generateCompanyCode();
+            companyRepository.save(company);
+            logger.info("Generated company code for broker: {} - Code: {}",
+                    company.getName(), company.getCompanyCode());
+        }
     }
 }

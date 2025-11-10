@@ -48,12 +48,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/cors-test").permitAll()
 
                         // ✅ SUPER_ADMIN only endpoints
-                        .requestMatchers("/api/companies/create").hasRole("SUPER_ADMIN")
+                        .requestMatchers("/api/companies/broker").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/users/create").hasRole("SUPER_ADMIN")
-                        .requestMatchers("/api/transactions/**").authenticated()
-                        .requestMatchers("/api/agreements/**").authenticated()
 
                         // ✅ Authenticated endpoints
+                        .requestMatchers("/api/transactions/**").authenticated()
+                        .requestMatchers("/api/agreements/**").authenticated()
                         .requestMatchers("/api/companies/**").authenticated()
                         .requestMatchers("/api/users/**").authenticated()
                         .requestMatchers("/api/dashboard/**").authenticated()

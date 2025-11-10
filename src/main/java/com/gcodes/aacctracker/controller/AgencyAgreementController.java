@@ -54,7 +54,7 @@ public class AgencyAgreementController {
             Company broker = companyRepository.findById(request.getBrokerCompanyId())
                     .orElseThrow(() -> new RuntimeException("Broker company not found"));
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Only SUPER_ADMIN or Broker ADMIN can create agreements"));
             }
@@ -99,7 +99,7 @@ public class AgencyAgreementController {
             Company broker = agreement.getBrokerCompany();
 
             // Yetki kontrolü
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Insufficient permissions to update this agreement"));
             }
@@ -144,7 +144,7 @@ public class AgencyAgreementController {
             AgencyAgreement agreement = agreementService.getAgreementById(id);
             Company broker = agreement.getBrokerCompany();
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Insufficient permissions"));
             }
@@ -179,7 +179,7 @@ public class AgencyAgreementController {
             AgencyAgreement agreement = agreementService.getAgreementById(id);
             Company broker = agreement.getBrokerCompany();
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Insufficient permissions"));
             }
@@ -212,7 +212,7 @@ public class AgencyAgreementController {
             AgencyAgreement agreement = agreementService.getAgreementById(id);
             Company broker = agreement.getBrokerCompany();
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Insufficient permissions"));
             }
@@ -246,8 +246,8 @@ public class AgencyAgreementController {
 
             // Yetki kontrolü
             if (!currentUser.isSuperAdmin() &&
-                    !currentUser.isCompanyAdmin(agreement.getBrokerCompany()) &&
-                    !currentUser.isCompanyAdmin(agreement.getClientCompany())) {
+                    !currentUser.isAdminOfCompany(agreement.getBrokerCompany()) &&
+                    !currentUser.isAdminOfCompany(agreement.getClientCompany())) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied to this agreement"));
             }
@@ -274,8 +274,8 @@ public class AgencyAgreementController {
 
             // Yetki kontrolü
             if (!currentUser.isSuperAdmin() &&
-                    !currentUser.isCompanyAdmin(agreement.getBrokerCompany()) &&
-                    !currentUser.isCompanyAdmin(agreement.getClientCompany())) {
+                    !currentUser.isAdminOfCompany(agreement.getBrokerCompany()) &&
+                    !currentUser.isAdminOfCompany(agreement.getClientCompany())) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied to this agreement"));
             }
@@ -302,7 +302,7 @@ public class AgencyAgreementController {
             Company broker = companyRepository.findById(brokerId)
                     .orElseThrow(() -> new RuntimeException("Broker company not found"));
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied"));
             }
@@ -336,7 +336,7 @@ public class AgencyAgreementController {
             Company client = companyRepository.findById(clientId)
                     .orElseThrow(() -> new RuntimeException("Client company not found"));
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(client)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(client)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied"));
             }
@@ -444,7 +444,7 @@ public class AgencyAgreementController {
             Company broker = companyRepository.findById(brokerId)
                     .orElseThrow(() -> new RuntimeException("Broker company not found"));
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(broker)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(broker)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied"));
             }
@@ -479,7 +479,7 @@ public class AgencyAgreementController {
             Company client = companyRepository.findById(clientId)
                     .orElseThrow(() -> new RuntimeException("Client company not found"));
 
-            if (!currentUser.isSuperAdmin() && !currentUser.isCompanyAdmin(client)) {
+            if (!currentUser.isSuperAdmin() && !currentUser.isAdminOfCompany(client)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "❌ Access denied"));
             }

@@ -237,7 +237,13 @@ public class DataInitializer {
         broker.setDescription("Demo ve test amaçlı gümrük müşavirliği");
         broker.setCompanyType(CompanyType.CUSTOMS_BROKER);
         broker.setIsActive(true);
+        // ✅ YENİ: Public açıklama ekle
+        broker.setPublicDescription("Demo gümrük müşavirliği - Test ve geliştirme amaçlı");
         Company savedBroker = companyRepository.save(broker);
+
+        // ✅ YENİ: Firma kodunu oluştur
+        savedBroker.generateCompanyCode();
+        savedBroker = companyRepository.save(savedBroker);
 
         // Professional planı al
         SubscriptionPlan professionalPlan = subscriptionPlanRepository.findByName("Professional")
@@ -248,7 +254,7 @@ public class DataInitializer {
         subscription.setBrokerCompany(savedBroker);
         subscription.setSubscriptionPlan(professionalPlan);
         subscription.setStartDate(LocalDateTime.now());
-        subscription.setEndDate(LocalDateTime.now().plusYears(1)); // 1 yıl süre
+        subscription.setEndDate(LocalDateTime.now().plusYears(1));
         subscription.setIsActive(true);
         subscription.setNotes("Demo subscription - automatically created");
         brokerSubscriptionRepository.save(subscription);
@@ -260,7 +266,8 @@ public class DataInitializer {
         tracking.setCurrentClientCompanies(0);
         usageTrackingRepository.save(tracking);
 
-        logger.info("   ✅ Demo broker company created: {}", savedBroker.getName());
+        logger.info("   ✅ Demo broker company created: {} (Code: {})",
+                savedBroker.getName(), savedBroker.getCompanyCode());
         return savedBroker;
     }
 

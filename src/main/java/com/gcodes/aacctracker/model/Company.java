@@ -12,7 +12,8 @@ import java.util.List;
 @Table(name = "companies",
         indexes = {
                 @Index(name = "idx_parent_broker", columnList = "parent_broker_id"),
-                @Index(name = "idx_type_active", columnList = "company_type, is_active")
+                @Index(name = "idx_type_active", columnList = "company_type, is_active"),
+                @Index(name = "idx_company_code", columnList = "company_code")
         })
 @Getter
 @Setter
@@ -27,6 +28,14 @@ public class Company {
 
     @Column(length = 500)
     private String description;
+
+    // ✅ YENİ: Firma kodu (Müşterilerin kayıt olurken kullanacağı)
+    @Column(unique = true, length = 20, name = "company_code")
+    private String companyCode; // Örn: "GMK001", "GMK002"
+
+    // ✅ YENİ: Genel açıklama (Müşterilere gösterilecek)
+    @Column(length = 500, name = "public_description")
+    private String publicDescription;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, name = "company_type")
@@ -78,5 +87,16 @@ public class Company {
      */
     public Company getBrokerCompany() {
         return isBroker() ? this : parentBroker;
+    }
+
+    /**
+     * Firma kodu oluştur (otomatik)
+     */
+    public void generateCompanyCode() {
+        if (this.companyCode == null && this.isBroker() && this.id != null) {
+            // Örnek: GMK001, GMK002, GMK003
+            String prefix = "GMK";
+            this.companyCode = prefix + String.format("%03d", this.id);
+        }
     }
 }

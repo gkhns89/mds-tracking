@@ -53,7 +53,7 @@ public class User {
     public User() {
     }
 
-    // ===== HELPER METODLARI =====
+// ===== HELPER METODLARI =====
 
     public boolean isSuperAdmin() {
         return GlobalRole.SUPER_ADMIN.equals(this.globalRole);
@@ -91,6 +91,57 @@ public class User {
         } else {
             return company.getParentBroker();
         }
+    }
+
+    /**
+     * Kullanıcı belirli bir şirkette ADMIN yetkisine sahip mi?
+     * <p>
+     * KURALLAR:
+     * - SUPER_ADMIN: Her zaman true
+     * - BROKER_ADMIN: Kendi broker firması için true
+     * - Diğerleri: false
+     */
+    public boolean isAdminOfCompany(Company targetCompany) {
+        if (this.isSuperAdmin()) {
+            return true;
+        }
+
+        if (this.isBrokerAdmin() && this.company != null && targetCompany != null) {
+            // Broker ise, kendi firması mı kontrol et
+            if (targetCompany.isBroker()) {
+                return this.company.getId().equals(targetCompany.getId());
+            }
+            // Client ise, bu client'in parent broker'ı mı kontrol et
+            if (targetCompany.isClient() && targetCompany.getParentBroker() != null) {
+                return this.company.getId().equals(targetCompany.getParentBroker().getId());
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Kullanıcı belirli bir şirketi yönetebilir mi?
+     */
+    public boolean canManageCompany(Company targetCompany) {
+        return isAdminOfCompany(targetCompany);
+    }
+
+    /**
+     * Kullanıcı belirli bir broker firmasında yetkili mi?
+     */
+    public boolean isAuthorizedForBroker(Company brokerCompany) {
+        if (this.isSuperAdmin()) {
+            return true;
+        }
+
+        if (this.isBrokerStaff() && this.company != null) {
+            Company myBroker = this.getBrokerCompany();
+            return myBroker != null && brokerCompany != null &&
+                    myBroker.getId().equals(brokerCompany.getId());
+        }
+
+        return false;
     }
 
     @PreUpdate

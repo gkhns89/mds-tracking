@@ -15,6 +15,9 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
 
     Optional<Company> findByName(String name);
 
+    // ✅ YENİ: Firma koduna göre bul
+    Optional<Company> findByCompanyCode(String companyCode);
+
     // ===== TİP BAZLI SORGULAR =====
 
     List<Company> findByCompanyType(CompanyType companyType);
@@ -44,6 +47,12 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
 
     @Query("SELECT c FROM Company c WHERE c.companyType = 'CUSTOMS_BROKER' AND c.isActive = TRUE")
     List<Company> findAllActiveBrokers();
+
+    // ✅ YENİ: Firma kodu olan aktif broker'lar (kayıt ekranı için)
+    @Query("SELECT c FROM Company c WHERE c.companyType = 'CUSTOMS_BROKER' " +
+            "AND c.isActive = TRUE AND c.companyCode IS NOT NULL " +
+            "ORDER BY c.name ASC")
+    List<Company> findAllActiveBrokersWithCodes();
 
     @Query("SELECT COUNT(c) FROM Company c WHERE c.companyType = 'CLIENT' " +
             "AND c.parentBroker.id = :brokerId AND c.isActive = TRUE")
