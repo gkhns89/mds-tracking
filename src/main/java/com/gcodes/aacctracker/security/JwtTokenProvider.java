@@ -14,11 +14,11 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
-    @Value("${JWT_SECRET}")
+    @Value("${jwt.secret}")
     private String secretKey;
 
-    @Value("${JWT_EXPIRATION}")
-    private long validityInMilliseconds = 3600000; // 1 hour
+    @Value("${jwt.expiration}")
+    private long validityInMilliseconds;
 
     private SecretKey getSigningKey() {
         // Secret en az 256 bit (32 karakter) olmalı

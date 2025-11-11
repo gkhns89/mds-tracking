@@ -17,6 +17,8 @@ public class AgencyAgreementCreateRequest {
     private Long clientCompanyId;
 
     private LocalDateTime startDate;
+
+    @NotNull(message = "Agreement end date is required")
     private LocalDateTime endDate;
     private String notes;
 }

@@ -313,7 +313,7 @@ public class DataInitializer {
         client.setDescription("Demo müşteri firması");
         client.setCompanyType(CompanyType.CLIENT);
         client.setParentBroker(broker);
-        client.setIsActive(true);
+        client.setIsActive(false);
         Company saved = companyRepository.save(client);
 
         // Usage tracking güncelle

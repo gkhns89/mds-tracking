@@ -1,5 +1,6 @@
 package com.gcodes.aacctracker.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -53,17 +54,21 @@ public class Company {
     private Boolean isActive = true;
 
     // ✅ Broker'ın müşteri listesi
+    @JsonIgnore
     @OneToMany(mappedBy = "parentBroker", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Company> clients = new ArrayList<>();
 
     // ✅ Firmaya ait kullanıcılar
+    @JsonIgnore
     @OneToMany(mappedBy = "company", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<User> users = new ArrayList<>();
 
     // ✅ Firma ile ilgili işlemler
+    @JsonIgnore
     @OneToMany(mappedBy = "brokerCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<CustomsTransaction> brokerTransactions = new ArrayList<>();
 
+    @JsonIgnore
     @OneToMany(mappedBy = "clientCompany", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<CustomsTransaction> clientTransactions = new ArrayList<>();
 
@@ -85,6 +90,7 @@ public class Company {
      * - BROKER ise kendisi
      * - CLIENT ise parent broker
      */
+    @JsonIgnore
     public Company getBrokerCompany() {
         return isBroker() ? this : parentBroker;
     }

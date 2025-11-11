@@ -23,6 +23,8 @@ public class AgencyAgreement {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // ⚠️ DİKKAT: Bunlar OK ama Company içinde collection'lar var
+    // En iyisi DTO kullanmak!
     // ✅ Gümrük firması (Broker)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "broker_company_id", nullable = false)
