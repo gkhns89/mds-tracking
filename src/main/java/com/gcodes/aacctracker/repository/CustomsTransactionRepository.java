@@ -83,8 +83,11 @@ public interface CustomsTransactionRepository extends JpaRepository<CustomsTrans
     // ✅ Client'in tüm işlemleri (READ ONLY olarak)
     List<CustomsTransaction> findByClientCompanyOrderByCreatedAtDesc(Company clientCompany);
 
-    // ✅ Son 10 işlem
-    @Query("SELECT ct FROM CustomsTransaction ct ORDER BY ct.createdAt DESC LIMIT 10")
+    // ✅ UPDATED: Son 10 işlem (JOIN FETCH ile optimize edildi)
+    @Query("SELECT DISTINCT ct FROM CustomsTransaction ct " +
+            "LEFT JOIN FETCH ct.brokerCompany " +
+            "LEFT JOIN FETCH ct.clientCompany " +
+            "ORDER BY ct.createdAt DESC LIMIT 10")
     List<CustomsTransaction> findRecentTransactions();
 
     // ✅ Broker'ın son işlemleri
